@@ -6,6 +6,7 @@ import plotext as pltx  # For plotting in the terminal
 import sys
 import argparse
 import termios  # POSIX-specific module for terminal I/O control
+import logging
 
 # --- ANSI Escape Codes ---
 ANSI_CURSOR_HOME = "\033[H"
@@ -42,36 +43,67 @@ DEFAULT_Y_TICKS_ARG = 6
 
 
 class NetworkMonitor:
-    def __init__(self, args):
+    """
+    Monitors network latency to a specified host by sending ICMP pings
+    at regular intervals. Displays a real-time updating graph of latency
+    in the terminal using plotext and provides statistics.
+    """
+
+    def __init__(self, args: argparse.Namespace):
+        """
+        Initializes the NetworkMonitor instance.
+
+        Args:
+            args (argparse.Namespace): Parsed command-line arguments.
+                Expected attributes: host, interval, ymax, yticks.
+        """
         # Configuration from command line arguments
-        self.host = args.host
-        self.ping_interval = args.interval
-        self.graph_y_max = args.ymax
-        self.y_ticks = args.yticks
+        self.host: str = args.host
+        self.ping_interval: float = args.interval
+        self.graph_y_max: float = args.ymax
+        self.y_ticks: int = args.yticks
 
         # Configuration constants
-        self.max_data_points = MAX_DATA_POINTS
-        self.consecutive_failures_threshold = (
-            CONSECUTIVE_FAILURES_ALERT_THRESHOLD
-        )
-        self.status_message_reserved_lines = STATUS_MESSAGE_RESERVED_LINES
+        self.max_data_points: int = MAX_DATA_POINTS
+        self.consecutive_failures_threshold: int = CONSECUTIVE_FAILURES_ALERT_THRESHOLD
+        self.status_message_reserved_lines: int = STATUS_MESSAGE_RESERVED_LINES
 
         # State variables
-        self.latency_plot_values = []
-        self.latency_history_real_values = []
-        self.consecutive_ping_failures = 0
-        self.connection_status_message = ""
-        self.total_monitoring_time_seconds = 0
+        self.latency_plot_values: list[float] = []
+        self.latency_history_real_values: list[float | None] = []
+        self.consecutive_ping_failures: int = 0
+        self.connection_status_message: str = ""
+        self.total_monitoring_time_seconds: float = 0.0
         self.original_terminal_settings = None
+
+        # Setup logger
+        logger_name = f"{__name__}.{self.__class__.__name__}"
+        self.logger = logging.getLogger(logger_name)
+        self.logger.setLevel(logging.INFO)
+
+        handler = logging.StreamHandler(sys.stdout)
+        formatter = logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+        )
+        handler.setFormatter(formatter)
+
+        if not self.logger.handlers:
+            self.logger.addHandler(handler)
+        self.logger.propagate = False
 
     def _measure_latency(self) -> float | None:
         """
-        Measures latency to self.host using the Linux 'ping' command.
-        Returns latency in ms or None if ping fails or output cannot be parsed.
+        Measures latency to the configured host using the system's ping command.
+
+        Returns:
+            float | None: Latency in milliseconds (ms) if successful,
+                          None if ping fails or output cannot be parsed.
+
+        Raises:
+            FileNotFoundError: If the 'ping' command is not found.
         """
-        ping_timeout_val = str(
-            max(PING_MIN_TIMEOUT_S, int(self.ping_interval))
-        )
+        ping_timeout_val = str(max(PING_MIN_TIMEOUT_S, int(self.ping_interval)))
+        # Ensure subprocess timeout is slightly larger than ping's own timeout
         subprocess_timeout = max(
             SUBPROCESS_MIN_TIMEOUT_S_BASE,
             self.ping_interval + SUBPROCESS_TIMEOUT_S_ADDITIVE,
@@ -84,151 +116,192 @@ class NetworkMonitor:
                 capture_output=True,
                 text=True,
                 timeout=subprocess_timeout,
-                check=False,
+                check=False,  # Don't raise exception for non-zero return codes
             )
-            if proc.returncode == 0:
+            if proc.returncode == 0:  # Successful ping
                 output = proc.stdout
-                # Standard Linux ping output for time
-                match = re.search(
-                    r"time=([0-9\.]+)\s*ms", output, re.IGNORECASE
-                )
+                # Regex to find 'time=...' in ping output
+                match = re.search(r"time=([0-9\.]+)\s*ms", output, re.IGNORECASE)
                 if match:
                     return float(match.group(1))
-                return None
-            else:
+                self.logger.warning("Ping successful but no time found in output.")
+                return None  # Should be unlikely for standard ping
+            else:  # Ping command failed (e.g., host unknown, timeout)
+                self.logger.debug(
+                    f"Ping failed with return code {proc.returncode}: {proc.stderr}"
+                )
                 return None
         except subprocess.TimeoutExpired:
+            self.logger.warning(f"Ping to {self.host} timed out (subprocess).")
             return None
         except FileNotFoundError:
             msg = (
                 "CRITICAL ERROR: 'ping' command not found. "
-                "Please ensure it is installed and in your PATH.\n"
+                "Please ensure it is installed and in your PATH."
             )
-            sys.stdout.write(msg)
-            raise
-        except Exception:
+            self.logger.critical(msg)
+            raise  # Re-raise to be caught by the main run loop's exception handler
+        except Exception as e:
+            self.logger.error(
+                f"Unexpected error in _measure_latency: {e}", exc_info=True
+            )
             return None
 
     def _clear_screen_and_position_cursor(self):
-        """Clears screen and positions cursor at home."""
+        """Clears screen (from cursor down) and positions cursor at home."""
         sys.stdout.write(ANSI_CURSOR_HOME)
+        # Using CLS (clear screen from cursor to end) instead of full clear
+        # to potentially reduce flicker with logging to stdout.
+        # sys.stdout.write(ANSI_CLEAR_FROM_CURSOR_TO_END)
 
     def _display_status_message(self):
-        """Displays the current connection status message."""
+        """
+        Displays the current connection status message at the top of the screen,
+        occupying a fixed number of lines.
+        """
         status_lines_printed = 0
         if self.connection_status_message:
             message_to_display = [self.connection_status_message]
+            # Add a separator line for alerts or info messages for emphasis
             if self.connection_status_message.startswith(
                 "!!!"
             ) or self.connection_status_message.startswith("INFO:"):
-                message_to_display.append(
-                    "-" * len(self.connection_status_message)
-                )
+                message_to_display.append("-" * len(self.connection_status_message))
 
             for line_text in message_to_display:
                 if status_lines_printed < self.status_message_reserved_lines:
                     sys.stdout.write(line_text + "\n")
                     status_lines_printed += 1
                 else:
-                    break
-        for _ in range(
-            self.status_message_reserved_lines - status_lines_printed
-        ):
+                    break  # Don't exceed reserved lines
+
+        # Fill any remaining reserved lines to ensure stable layout
+        for _ in range(self.status_message_reserved_lines - status_lines_printed):
             sys.stdout.write("\n")
-        sys.stdout.write("\n")  # Blank line after status message
+        sys.stdout.write("\n")  # Extra blank line after status message area
 
     def _prepare_plot_area(self) -> tuple[int, int] | None:
         """
-        Gets terminal size, calculates and returns plot_height, plot_width.
-        Returns None if terminal size cannot be determined or is too small.
+        Gets terminal size, calculates plot height and width.
+
+        Returns:
+            tuple[int, int] | None: (plot_height, plot_width) if successful,
+                                     None otherwise.
         """
         try:
             terminal_cols, terminal_lines = os.get_terminal_size()
+            # Calculate overhead based on lines reserved for status and other elements
             overhead = (
-                self.status_message_reserved_lines +
-                PLOT_ESTIMATED_OVERHEAD_LINES
+                self.status_message_reserved_lines + PLOT_ESTIMATED_OVERHEAD_LINES
             )
-            plot_height = max(PLOT_MIN_HEIGHT_LINES,
-                              terminal_lines - overhead)
-            plot_width = max(PLOT_MIN_WIDTH_CHARS, terminal_cols - 2)
+            plot_height = max(PLOT_MIN_HEIGHT_LINES, terminal_lines - overhead)
+            plot_width = max(
+                PLOT_MIN_WIDTH_CHARS, terminal_cols - 2
+            )  # Small margin for borders
 
-            if (plot_height < PLOT_MIN_HEIGHT_LINES or
-                    plot_width < PLOT_MIN_WIDTH_CHARS):
+            if plot_height < PLOT_MIN_HEIGHT_LINES or plot_width < PLOT_MIN_WIDTH_CHARS:
                 warn_msg = (
-                    "WARNING: Calculated plot area is too small. "
-                    "Graph might not display well.\n"
+                    "Calculated plot area is too small. "
+                    "Graph might not display well."
                 )
-                sys.stdout.write(warn_msg)
+                self.logger.warning(warn_msg)
             return plot_height, plot_width
-        except OSError as e:
-            sys.stdout.write(f"Error getting terminal size: {e}\n")
+        except OSError as e:  # os.get_terminal_size() can raise OSError
+            self.logger.error(f"Error getting terminal size: {e}")
             return None
 
-    def _configure_plot_axes_and_labels(self, plot_width: int,
-                                       plot_height: int):
-        """Configures plot title, labels, Y-axis limits, and Y-ticks."""
+    def _configure_plot_axes_and_labels(self, plot_width: int, plot_height: int):
+        """
+        Configures plotext plot: size, title, labels, Y-axis limits, and Y-ticks.
+
+        Args:
+            plot_width (int): The calculated width for the plot.
+            plot_height (int): The calculated height for the plot.
+        """
         pltx.plot_size(plot_width, plot_height)
         pltx.title("Real-time Internet Latency")
-        pltx.ylabel("(ms)")
+        pltx.ylabel("(ms)")  # Latency in milliseconds
 
         max_y_data_current = 0
         if self.latency_plot_values:
+            # Consider only valid, positive latencies for max Y calculation
             valid_latencies = [
-                val for val in self.latency_plot_values
-                if val is not None and val > 0
+                val for val in self.latency_plot_values if val is not None and val > 0
             ]
             if valid_latencies:
                 max_y_data_current = max(valid_latencies)
 
+        # Determine Y-axis upper limit
         y_lim_upper_cand = (
-            max_y_data_current * 1.1 if max_y_data_current > 0
-            else self.graph_y_max
+            max_y_data_current * 1.1
+            if max_y_data_current > 0
+            else self.graph_y_max  # Use default if no data or all zeros
         )
         y_lim_upper = max(self.graph_y_max, y_lim_upper_cand)
 
+        # Ensure a minimum sensible Y range
         if y_lim_upper < PLOT_MIN_Y_LIM_UPPER:
             y_lim_upper = PLOT_MIN_Y_LIM_UPPER
         pltx.ylim(0, y_lim_upper)
 
+        # Attempt to set a specific number of Y-ticks for better readability
         if self.y_ticks > 1:
             try:
                 pltx.yticks(self.y_ticks)
-            except TypeError:
-                # Fallback for yticks(int) TypeError
+            except TypeError:  # plotext might raise TypeError for certain tick counts
+                # Fallback: calculate ticks manually if yticks(int) fails
                 if y_lim_upper > 0:
                     step = y_lim_upper / (self.y_ticks - 1)
-                    # Corrected E128: align with opening parenthesis or use hanging indent
-                    ticks_list = sorted(list(set(
-                        [round(i * step) for i in range(self.y_ticks)]
-                    )))
+                    ticks_list = sorted(
+                        list(set([round(i * step) for i in range(self.y_ticks)]))
+                    )
                     if ticks_list:
                         pltx.yticks(ticks_list)
-                elif self.y_ticks > 1:  # y_lim_upper is 0
+                elif self.y_ticks > 1:  # y_lim_upper is 0, provide minimal ticks
                     pltx.yticks([0, 1])
-            except Exception as e_ytick:
-                warning_text = "WARNING: Could not set custom y-axis ticks"
-                sys.stdout.write(f"{warning_text}: {e_ytick}\n")
+            except Exception as e_ytick:  # Catch any other yticks error
+                warning_text = "Could not set custom y-axis ticks"
+                self.logger.warning(f"{warning_text}: {e_ytick}")
 
         pltx.canvas_color("black")
         pltx.axes_color("gray")
         pltx.ticks_color("dark_gray")
 
-    def _plot_latency_series(self,
-                             x_axis_plot_indices: list[int]) -> list[int]:
-        """Plots main latency line and failure markers. Returns X indices of failures."""
+    def _plot_latency_series(self, x_axis_plot_indices: list[int]) -> list[int]:
+        """
+        Plots the main latency data and failure markers on the configured plot.
+
+        Args:
+            x_axis_plot_indices (list[int]): X-axis indices for plotting.
+
+        Returns:
+            list[int]: A list of X-axis indices where failures occurred.
+        """
+        # Plot the primary latency data (cyan line).
+        # self.latency_plot_values contains actual latency values or 0 for failures.
+        # Using 0 for failures helps plotext scale the Y-axis to include zero,
+        # ensuring a consistent baseline, especially if early pings fail or are high.
         pltx.plot(
             x_axis_plot_indices,
             self.latency_plot_values,
-            marker="braille",
+            marker="braille",  # Use braille characters for a denser line
             color="cyan",
         )
+
+        # Identify and mark actual ping failures.
         x_failure_indices = []
+        # self.latency_history_real_values stores actual latency or None for failures.
+        # Iterate through this list to find where None (a failure) is recorded.
         for i, real_latency_val in enumerate(self.latency_history_real_values):
             if real_latency_val is None:
-                # Ensure index is valid
+                # Ensure index is valid for x_axis_plot_indices before appending
                 if i < len(x_axis_plot_indices):
                     x_failure_indices.append(x_axis_plot_indices[i])
+
         if x_failure_indices:
+            # For each identified failure, plot a red 'X' marker.
+            # These markers are plotted at PLOT_FAILURE_MARKER_Y_BASE (usually 0),
+            # placing them along the X-axis.
             y_values_for_failures = [PLOT_FAILURE_MARKER_Y_BASE] * len(
                 x_failure_indices
             )
@@ -241,20 +314,28 @@ class NetworkMonitor:
         return x_failure_indices
 
     def _render_plot(self, x_failure_indices: list[int]):
-        """Handles empty plot scenarios and shows the plot."""
+        """
+        Handles final plot rendering, including empty plot scenarios.
+
+        Args:
+            x_failure_indices (list[int]): List of X-indices where failures occurred.
+                                           Used to determine if any data (even failures)
+                                           was plotted.
+        """
         no_plot_data = not self.latency_plot_values or all(
             val == 0 for val in self.latency_plot_values
         )
-        # Draw empty frame if no data at all and no failures marked
+        # If no data (neither success nor failure markers) was plotted,
+        # draw an empty frame to show title/axes.
         if no_plot_data and not x_failure_indices:
             pltx.plot([], [])
 
-        pltx.xticks([], [])  # Hide X-axis numeric ticks and labels
+        pltx.xticks([], [])  # Hide X-axis numeric ticks and labels for simplicity
         pltx.xlabel("(Press Ctrl+C to Exit)")
-        pltx.show()
+        pltx.show()  # Display the constructed plot
 
     def _display_statistics(self):
-        """Formats and prints all statistical information."""
+        """Formats and prints current monitoring statistics to stdout."""
         stats_lines = [
             "\n--- Statistics ---",
             f"Monitoring Host: {self.host}",
@@ -264,11 +345,11 @@ class NetworkMonitor:
         if self.latency_history_real_values:
             last_real_ping = self.latency_history_real_values[-1]
             if last_real_ping is not None:
-                stats_lines.append(
-                    f"Current Latency: {last_real_ping:.2f} ms")
+                stats_lines.append(f"Current Latency: {last_real_ping:.2f} ms")
             else:
                 stats_lines.append("Current Latency: PING FAILED")
 
+            # Calculate stats only from valid (non-None) latency values
             valid_latencies = [
                 val for val in self.latency_history_real_values if val is not None
             ]
@@ -276,31 +357,30 @@ class NetworkMonitor:
                 avg_lat = sum(valid_latencies) / len(valid_latencies)
                 stats_lines.append(f"Average (valid pings): {avg_lat:.2f} ms")
                 min_val = min(valid_latencies)
-                stats_lines.append(
-                    f"Minimum (valid pings): {min_val:.2f} ms")
+                stats_lines.append(f"Minimum (valid pings): {min_val:.2f} ms")
                 max_val = max(valid_latencies)
-                stats_lines.append(
-                    f"Maximum (valid pings): {max_val:.2f} ms")
-            else:
+                stats_lines.append(f"Maximum (valid pings): {max_val:.2f} ms")
+            else:  # No successful pings yet in history
                 stats_lines.append("Average (valid pings): N/A")
                 stats_lines.append("Minimum (valid pings): N/A")
                 stats_lines.append("Maximum (valid pings): N/A")
 
+        # Format total monitoring time
         h = int(self.total_monitoring_time_seconds // 3600)
         m = int((self.total_monitoring_time_seconds % 3600) // 60)
         s = int(self.total_monitoring_time_seconds % 60)
         time_fmt = ""
         if h > 0:
             time_fmt += f"{h}h "
-        if m > 0 or h > 0:
+        if m > 0 or h > 0:  # Ensure minutes show if hours are present
             time_fmt += f"{m}m "
         time_fmt += f"{s}s"
         stats_lines.append(f"Monitoring Time: {time_fmt.strip()}")
-        stats_lines.append(
-            f"Consecutive Failures: {self.consecutive_ping_failures}"
-        )
+        stats_lines.append(f"Consecutive Failures: {self.consecutive_ping_failures}")
         stats_lines.append("--------------------")
+        # Print all statistics directly to stdout
         sys.stdout.write("\n".join(stats_lines) + "\n")
+        # Clear any part of a previous, longer stats display
         sys.stdout.write(ANSI_CLEAR_FROM_CURSOR_TO_END)
         sys.stdout.flush()
 
@@ -310,7 +390,9 @@ class NetworkMonitor:
         self._display_status_message()
 
         if not self.latency_plot_values:
-            sys.stdout.write("Waiting for first ping data...\n")
+            waiting_msg = "Waiting for first ping data..."
+            sys.stdout.write(waiting_msg + "\n")  # Keep direct user feedback
+            self.logger.info(waiting_msg)
             # Display statistics even if there's no plot data yet
             self._display_statistics()
             return
@@ -320,6 +402,7 @@ class NetworkMonitor:
 
         plot_area_dims = self._prepare_plot_area()
         if plot_area_dims is None:
+            self.logger.error("Plot area dimensions could not be prepared.")
             # If plot area can't be prepared, still show stats
             self._display_statistics()
             return
@@ -332,36 +415,42 @@ class NetworkMonitor:
             x_failure_indices = self._plot_latency_series(x_axis_plot_indices)
             self._render_plot(x_failure_indices)
         except Exception as e_plot:
-            # Clear potentially garbled plot area before printing message
+            # Clear potentially garbled plot area before printing error
             sys.stdout.write(ANSI_CLEAR_FROM_CURSOR_TO_END)
-            sys.stdout.write(f"ERROR during plotext rendering: {e_plot}\n")
+            self.logger.error(f"Error during plotext rendering: {e_plot}")
 
         self._display_statistics()
 
     def _setup_terminal(self):
+        """Hides the cursor and saves original terminal settings."""
         sys.stdout.write(ANSI_HIDE_CURSOR)
         sys.stdout.flush()
         try:
-            self.original_terminal_settings = termios.tcgetattr(
-                sys.stdin.fileno()
+            # termios module is POSIX-specific
+            self.original_terminal_settings = termios.tcgetattr(sys.stdin.fileno())
+        except Exception as e:  # pylint: disable=broad-except
+            # If not in a real terminal (e.g. piped output), tcgetattr can fail.
+            self.logger.warning(
+                f"Could not get terminal settings: {e}. Terminal restoration might not work."
             )
-        except Exception:  # pylint: disable=broad-except
-            pass  # Fails if not in a real terminal
+            self.original_terminal_settings = None
 
     def _restore_terminal(self):
+        """Restores the cursor and original terminal settings."""
         sys.stdout.write(ANSI_SHOW_CURSOR)
         sys.stdout.flush()
         if self.original_terminal_settings:
             try:
                 termios.tcsetattr(
                     sys.stdin.fileno(),
-                    termios.TCSADRAIN,
+                    termios.TCSADRAIN,  # Wait for output to drain before changing settings
                     self.original_terminal_settings,
                 )
-            except Exception:  # pylint: disable=broad-except
-                pass
+            except Exception as e:  # pylint: disable=broad-except
+                self.logger.warning(f"Could not restore terminal settings: {e}.")
 
     def run(self):
+        """Runs the main monitoring loop."""
         self._setup_terminal()
         exit_code = EXIT_CODE_SUCCESS
         try:
@@ -369,66 +458,88 @@ class NetworkMonitor:
                 current_latency_real = self._measure_latency()
                 self.total_monitoring_time_seconds += self.ping_interval
 
+                # Update connection status message and failure counter
                 if current_latency_real is None:
                     self.consecutive_ping_failures += 1
                     threshold = self.consecutive_failures_threshold
-                    if (self.consecutive_ping_failures >= threshold and
-                            not self.connection_status_message.startswith("!!!")):
+                    # Check if alert threshold is met and not already alerting
+                    if (
+                        self.consecutive_ping_failures >= threshold
+                        and not self.connection_status_message.startswith("!!!")
+                    ):
                         self.connection_status_message = (
                             f"!!! ALERT: Connection to {self.host} LOST "
                             f"({self.consecutive_ping_failures} failures) !!!"
                         )
-                    elif (0 < self.consecutive_ping_failures < threshold and
-                            not self.connection_status_message.startswith("!!!")):
+                        self.logger.warning(self.connection_status_message)
+                    # Softer warning for initial failures below threshold
+                    elif (
+                        0 < self.consecutive_ping_failures < threshold
+                        and not self.connection_status_message.startswith("!!!")
+                    ):
                         self.connection_status_message = (
                             f"Warning: Ping to {self.host} failed "
                             f"({self.consecutive_ping_failures}x)"
                         )
+                        self.logger.warning(self.connection_status_message)
                 else:  # Ping successful
-                    threshold = self.consecutive_failures_threshold
+                    # If connection was previously lost, log restoration
                     if self.consecutive_ping_failures >= threshold:
                         self.connection_status_message = (
                             f"INFO: Connection to {self.host} RESTORED "
                             f"after {self.consecutive_ping_failures} "
                             "failure(s)!"
                         )
-                    elif self.consecutive_ping_failures > 0:
+                        self.logger.info(self.connection_status_message)
+                    elif (
+                        self.consecutive_ping_failures > 0
+                    ):  # If there were some prior failures before recovery
                         self.connection_status_message = (
                             f"INFO: Ping to {self.host} normalized "
                             f"after {self.consecutive_ping_failures} failure(s)."
                         )
+                        self.logger.info(self.connection_status_message)
                     elif self.connection_status_message.startswith("INFO:"):
+                        # Clear "INFO:" message after one display cycle
                         self.connection_status_message = ""
                     self.consecutive_ping_failures = 0
 
+                # FUTURE: Consider a DataPoint class/namedtuple to store
+                # (timestamp, real_latency, plot_latency) to unify data handling.
+
+                # Update data for history (accurate values for stats)
                 if len(self.latency_history_real_values) >= self.max_data_points:
                     self.latency_history_real_values.pop(0)
                 self.latency_history_real_values.append(current_latency_real)
 
+                # Update data for plotting (0 for failures for y-axis scaling)
                 if len(self.latency_plot_values) >= self.max_data_points:
                     self.latency_plot_values.pop(0)
-                plot_val = (current_latency_real
-                            if current_latency_real is not None else 0)
+                plot_val = (
+                    current_latency_real if current_latency_real is not None else 0
+                )
                 self.latency_plot_values.append(plot_val)
 
                 self._update_display_and_status()
                 time.sleep(self.ping_interval)
 
         except KeyboardInterrupt:
+            # Keep direct print for this user-initiated action
             print("\nMonitoring stopped by user.")
-        except Exception as e_main:
-            print(f"\nAn unexpected or critical error occurred: {e_main}")
-            if not isinstance(e_main, FileNotFoundError):
-                import traceback
-                traceback.print_exc()
-            # Ensure error code for other exceptions.
+        except Exception:  # Catch-all for any other unexpected error
+            self.logger.exception(
+                "An unexpected or critical error occurred in run loop"
+            )
             exit_code = EXIT_CODE_ERROR
         finally:
             self._restore_terminal()
-            # Determine final exit code
+            # Determine final exit code based on whether an unhandled exception
+            # (other than KeyboardInterrupt) occurred.
             current_exception = sys.exc_info()[1]
-            if (not isinstance(current_exception, KeyboardInterrupt) and
-                    current_exception is not None):
+            if (
+                not isinstance(current_exception, KeyboardInterrupt)
+                and current_exception is not None
+            ):
                 exit_code = EXIT_CODE_ERROR
             sys.exit(exit_code)
 
@@ -471,26 +582,15 @@ def main():
     )
     args = parser.parse_args()
 
+    # Basic argument validation before logger is fully set up in the class
     if args.interval <= 0:
-        err_msg = (
-            f"Error: Ping interval ({args.interval}s) must be "
-            "greater than zero."
-        )
-        print(err_msg)
+        print(f"Error: Ping interval ({args.interval}s) must be " "greater than zero.")
         sys.exit(EXIT_CODE_ERROR)
     if args.ymax <= 0:
-        err_msg = (
-            f"Error: Graph Y-max ({args.ymax}ms) must be greater "
-            "than zero."
-        )
-        print(err_msg)
+        print(f"Error: Graph Y-max ({args.ymax}ms) must be greater " "than zero.")
         sys.exit(EXIT_CODE_ERROR)
     if args.yticks < 2:
-        err_msg = (
-            f"Error: Number of Y-axis ticks ({args.yticks}) must be "
-            "at least 2."
-        )
-        print(err_msg)
+        print(f"Error: Number of Y-axis ticks ({args.yticks}) must be " "at least 2.")
         sys.exit(EXIT_CODE_ERROR)
 
     monitor = NetworkMonitor(args)
