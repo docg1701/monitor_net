@@ -334,6 +334,48 @@ class NetworkMonitor:
         pltx.xlabel("(Press Ctrl+C to Exit)")
         pltx.show()  # Display the constructed plot
 
+    def _calculate_average_latency(self) -> float | None:
+        """
+        Calculates the average latency from stored historical real values.
+
+        Returns:
+            float | None: The average latency, or None if no valid data.
+        """
+        valid_latencies = [
+            val for val in self.latency_history_real_values if val is not None
+        ]
+        if not valid_latencies:
+            return None
+        return sum(valid_latencies) / len(valid_latencies)
+
+    def _calculate_min_latency(self) -> float | None:
+        """
+        Calculates the minimum latency from stored historical real values.
+
+        Returns:
+            float | None: The minimum latency, or None if no valid data.
+        """
+        valid_latencies = [
+            val for val in self.latency_history_real_values if val is not None
+        ]
+        if not valid_latencies:
+            return None
+        return min(valid_latencies)
+
+    def _calculate_max_latency(self) -> float | None:
+        """
+        Calculates the maximum latency from stored historical real values.
+
+        Returns:
+            float | None: The maximum latency, or None if no valid data.
+        """
+        valid_latencies = [
+            val for val in self.latency_history_real_values if val is not None
+        ]
+        if not valid_latencies:
+            return None
+        return max(valid_latencies)
+
     def _display_statistics(self):
         """Formats and prints current monitoring statistics to stdout."""
         stats_lines = [
@@ -345,25 +387,37 @@ class NetworkMonitor:
         if self.latency_history_real_values:
             last_real_ping = self.latency_history_real_values[-1]
             if last_real_ping is not None:
-                stats_lines.append(f"Current Latency: {last_real_ping:.2f} ms")
+                stats_lines.append(
+                    f"Current Latency: {last_real_ping:.2f} ms")
             else:
                 stats_lines.append("Current Latency: PING FAILED")
 
-            # Calculate stats only from valid (non-None) latency values
-            valid_latencies = [
-                val for val in self.latency_history_real_values if val is not None
-            ]
-            if valid_latencies:
-                avg_lat = sum(valid_latencies) / len(valid_latencies)
+            # Use helper methods for statistics
+            avg_lat = self._calculate_average_latency()
+            min_val = self._calculate_min_latency()
+            max_val = self._calculate_max_latency()
+
+            if avg_lat is not None:
                 stats_lines.append(f"Average (valid pings): {avg_lat:.2f} ms")
-                min_val = min(valid_latencies)
-                stats_lines.append(f"Minimum (valid pings): {min_val:.2f} ms")
-                max_val = max(valid_latencies)
-                stats_lines.append(f"Maximum (valid pings): {max_val:.2f} ms")
-            else:  # No successful pings yet in history
+            else:
                 stats_lines.append("Average (valid pings): N/A")
+
+            if min_val is not None:
+                stats_lines.append(
+                    f"Minimum (valid pings): {min_val:.2f} ms")
+            else:
                 stats_lines.append("Minimum (valid pings): N/A")
+
+            if max_val is not None:
+                stats_lines.append(
+                    f"Maximum (valid pings): {max_val:.2f} ms")
+            else:
                 stats_lines.append("Maximum (valid pings): N/A")
+        else:  # No history yet
+            stats_lines.append("Current Latency: PING FAILED")
+            stats_lines.append("Average (valid pings): N/A")
+            stats_lines.append("Minimum (valid pings): N/A")
+            stats_lines.append("Maximum (valid pings): N/A")
 
         # Format total monitoring time
         h = int(self.total_monitoring_time_seconds // 3600)
@@ -461,10 +515,10 @@ class NetworkMonitor:
                 # Update connection status message and failure counter
                 if current_latency_real is None:
                     self.consecutive_ping_failures += 1
-                    threshold = self.consecutive_failures_threshold
+                    # threshold = self.consecutive_failures_threshold # BUG: This was a local variable
                     # Check if alert threshold is met and not already alerting
                     if (
-                        self.consecutive_ping_failures >= threshold
+                        self.consecutive_ping_failures >= self.consecutive_failures_threshold
                         and not self.connection_status_message.startswith("!!!")
                     ):
                         self.connection_status_message = (
@@ -474,7 +528,7 @@ class NetworkMonitor:
                         self.logger.warning(self.connection_status_message)
                     # Softer warning for initial failures below threshold
                     elif (
-                        0 < self.consecutive_ping_failures < threshold
+                        0 < self.consecutive_ping_failures < self.consecutive_failures_threshold
                         and not self.connection_status_message.startswith("!!!")
                     ):
                         self.connection_status_message = (
@@ -484,7 +538,7 @@ class NetworkMonitor:
                         self.logger.warning(self.connection_status_message)
                 else:  # Ping successful
                     # If connection was previously lost, log restoration
-                    if self.consecutive_ping_failures >= threshold:
+                    if self.consecutive_ping_failures >= self.consecutive_failures_threshold:
                         self.connection_status_message = (
                             f"INFO: Connection to {self.host} RESTORED "
                             f"after {self.consecutive_ping_failures} "
@@ -582,7 +636,7 @@ def main():
     )
     args = parser.parse_args()
 
-    # Basic argument validation before logger is fully set up in the class
+    # Basic argument validation before creating the monitor instance
     if args.interval <= 0:
         print(f"Error: Ping interval ({args.interval}s) must be " "greater than zero.")
         sys.exit(EXIT_CODE_ERROR)
@@ -593,6 +647,7 @@ def main():
         print(f"Error: Number of Y-axis ticks ({args.yticks}) must be " "at least 2.")
         sys.exit(EXIT_CODE_ERROR)
 
+    # If arguments are valid, create and run the monitor
     monitor = NetworkMonitor(args)
     monitor.run()
 

@@ -1,1 +1,3 @@
 plotext
+pytest
+pytest-mock
