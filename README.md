@@ -8,7 +8,7 @@ A Python command-line tool to monitor and graph your internet connection latency
 
 This script provides a continuously updating text-based graph of network ping latency to a specified host. It also displays key statistics such as current, average, minimum, and maximum latency, total monitoring time, and a count of consecutive ping failures. Failures are clearly marked on the graph.
 
-The tool is configurable via command-line arguments for the target host, ping interval, Y-axis maximum reference, and the number of Y-axis ticks. It leverages the native `ping` command of the underlying operating system.
+The tool is configurable via command-line arguments for the target host, ping interval, Y-axis maximum reference, and the number of Y-axis ticks, or alternatively, through a `monitor_config.ini` file. It leverages the native `ping` command of the underlying operating system.
 
 ## Features
 
@@ -120,6 +120,38 @@ You can customize the behavior by passing arguments to `run_monitor.sh`. These a
     * Default: `200.0` ms (as defined by `DEFAULT_GRAPH_Y_MAX_ARG`)
 * `--yticks YTICKS`: (Optional) Specifies the desired approximate number of discrete tick marks (and their labels) to display on the Y-axis.
     * Default: `6` (as defined by `DEFAULT_Y_TICKS_ARG`)
+
+## Configuration File (`monitor_config.ini`)
+
+Beyond command-line arguments, `monitor_net.py` can be configured using an INI file named `monitor_config.ini`. This file allows you to set your preferred defaults without needing to type them as command-line arguments every time.
+
+**Location:**
+The `monitor_config.ini` file must be placed in the same directory as the `monitor_net.py` script.
+
+**Precedence of Settings:**
+The script determines the final settings using the following order of precedence:
+1.  **Command-line arguments:** If a setting is provided as a command-line argument, it will always be used, overriding any other source. (Highest precedence)
+2.  **Values from `monitor_config.ini`:** If a setting is not provided via a command-line argument, the script will look for it in the configuration file.
+3.  **Built-in script defaults:** If a setting is not found in either the command-line arguments or the configuration file, the script's hardcoded default value will be used. (Lowest precedence)
+
+**File Structure and Example:**
+The configuration file must contain a section named `[MonitorSettings]`. Supported keys under this section are:
+
+```ini
+[MonitorSettings]
+host = your.default.host.com
+interval = 2.0
+ymax = 100.0
+yticks = 4
+```
+
+**Supported Keys and Types:**
+*   `host`: The default host or IP address to ping. (Type: string)
+*   `interval`: The default interval between pings in seconds. (Type: float)
+*   `ymax`: The default reference maximum Y-axis value for the graph in milliseconds. (Type: float)
+*   `yticks`: The default approximate number of Y-axis ticks. (Type: int)
+
+If the `monitor_config.ini` file contains invalid values (e.g., non-numeric for `interval`), that specific setting will be ignored with a warning message, and the script will fall back to the built-in script default (unless a command-line argument for that setting is provided).
 
 **Examples (cross-platform, adjust execution for Windows as shown above):**
 

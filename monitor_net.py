@@ -7,7 +7,8 @@ import sys
 import argparse
 import termios  # POSIX-specific module for terminal I/O control
 import logging
-import platform # For OS detection
+import platform  # For OS detection
+import configparser  # For reading configuration file
 
 # --- ANSI Escape Codes ---
 ANSI_CURSOR_HOME = "\033[H"
@@ -34,6 +35,8 @@ EXIT_CODE_ERROR = 1
 MAX_DATA_POINTS = 200
 CONSECUTIVE_FAILURES_ALERT_THRESHOLD = 3
 STATUS_MESSAGE_RESERVED_LINES = 3
+
+CONFIG_FILE_NAME = "monitor_config.ini"
 
 
 # Default values for command-line arguments
@@ -76,7 +79,11 @@ class NetworkMonitor:
         self.connection_status_message: str = ""
         self.total_monitoring_time_seconds: float = 0.0
         self.original_terminal_settings = None
-        self.current_os: str = "" # Will be set in __init__
+        self.current_os: str = ""  # Will be set before logger
+        self.config_file_settings: dict = {}  # For settings from INI file
+
+        # Determine OS type first, as it might influence other setups
+        self.current_os = platform.system().lower()
 
         # Setup logger
         logger_name = f"{__name__}.{self.__class__.__name__}"
@@ -93,9 +100,14 @@ class NetworkMonitor:
             self.logger.addHandler(handler)
         self.logger.propagate = False
 
-        # Determine and store OS type
-        self.current_os = platform.system().lower()
         self.logger.info(f"Detected OS: {self.current_os}")
+
+        # Initialize config_file_settings before determining final settings
+        self.config_file_settings: dict = {}
+        self._load_config_from_file()
+
+        # Determine final settings with precedence: CLI > Config File > Defaults
+        self._determine_effective_settings(args)
 
         # Platform-specific ping command attributes
         self.ping_cmd_parts: list[str] = []
@@ -124,6 +136,177 @@ class NetworkMonitor:
             self.ping_regex = re.compile(r"time=([0-9\.]+)\s*ms", re.IGNORECASE)
             self.ping_timeout_is_ms = False
 
+    @staticmethod
+    def _convert_setting(
+        value_str: str | None,
+        target_type_func,
+        setting_name: str,
+        logger: logging.Logger,
+    ):
+        """
+        Attempts to convert a string value to a target type.
+        Logs a warning and returns None if conversion fails.
+        """
+        if value_str is None:
+            return None
+        try:
+            return target_type_func(value_str)
+        except ValueError:
+            logger.warning(
+                f"Invalid value '{value_str}' for '{setting_name}' in config "
+                "file. It will be ignored."
+            )
+            return None
+
+    def _determine_effective_settings(self, cli_args: argparse.Namespace):
+        """
+        Determines the final settings based on precedence:
+        CLI > Config File > Script Defaults.
+        Updates self.host, self.ping_interval, self.graph_y_max, self.y_ticks.
+        """
+        # Start with ultimate script defaults
+        final_host = DEFAULT_HOST_ARG
+        final_interval = DEFAULT_PING_INTERVAL_SECONDS_ARG
+        final_ymax = DEFAULT_GRAPH_Y_MAX_ARG
+        final_yticks = DEFAULT_Y_TICKS_ARG
+
+        # 1. Apply Config File Settings (if they exist and are valid)
+        cfg_host = self.config_file_settings.get("host")
+        if cfg_host is not None:
+            final_host = cfg_host
+            self.logger.info(f"Using 'host' from config file: {final_host}")
+
+        cfg_interval_str = self.config_file_settings.get("interval")
+        if cfg_interval_str is not None:
+            converted_interval = NetworkMonitor._convert_setting(
+                cfg_interval_str, float, "interval", self.logger
+            )
+            if converted_interval is not None:
+                final_interval = converted_interval
+                self.logger.info(f"Using 'interval' from config file: {final_interval}")
+
+        cfg_ymax_str = self.config_file_settings.get("ymax")
+        if cfg_ymax_str is not None:
+            converted_ymax = NetworkMonitor._convert_setting(
+                cfg_ymax_str, float, "ymax", self.logger
+            )
+            if converted_ymax is not None:
+                final_ymax = converted_ymax
+                self.logger.info(f"Using 'ymax' from config file: {final_ymax}")
+
+        cfg_yticks_str = self.config_file_settings.get("yticks")
+        if cfg_yticks_str is not None:
+            converted_yticks = NetworkMonitor._convert_setting(
+                cfg_yticks_str, int, "yticks", self.logger
+            )
+            if converted_yticks is not None:
+                final_yticks = converted_yticks
+                self.logger.info(f"Using 'yticks' from config file: {final_yticks}")
+
+        # 2. Apply CLI arguments (these override config and defaults if specified by user)
+        # Check if CLI arg is different from its argparse-defined default.
+        # If so, the user explicitly set it.
+        if cli_args.host != DEFAULT_HOST_ARG:
+            final_host = cli_args.host
+            self.logger.info(f"CLI 'host' ({final_host}) overrides other settings.")
+        if cli_args.interval != DEFAULT_PING_INTERVAL_SECONDS_ARG:
+            final_interval = cli_args.interval
+            self.logger.info(
+                f"CLI 'interval' ({final_interval}) overrides other settings."
+            )
+        if cli_args.ymax != DEFAULT_GRAPH_Y_MAX_ARG:
+            final_ymax = cli_args.ymax
+            self.logger.info(f"CLI 'ymax' ({final_ymax}) overrides other settings.")
+        if cli_args.yticks != DEFAULT_Y_TICKS_ARG:
+            final_yticks = cli_args.yticks
+            self.logger.info(f"CLI 'yticks' ({final_yticks}) overrides other settings.")
+
+        # Set the final effective settings on the instance
+        self.host = final_host
+        self.ping_interval = final_interval
+        self.graph_y_max = final_ymax
+        self.y_ticks = final_yticks
+
+        # Log final effective settings
+        self.logger.info(f"Effective host: {self.host}")
+        self.logger.info(f"Effective interval: {self.ping_interval}s")
+        self.logger.info(f"Effective graph Y-max: {self.graph_y_max}ms")
+        self.logger.info(f"Effective Y-axis ticks: {self.y_ticks}")
+
+        # Final validation of effective settings
+        if self.ping_interval <= 0:
+            raise ValueError(
+                f"Effective ping interval ({self.ping_interval}s) must be greater than zero."
+            )
+        if self.graph_y_max <= 0:
+            raise ValueError(
+                f"Effective graph Y-max ({self.graph_y_max}ms) must be greater than zero."
+            )
+        if self.y_ticks < 2:
+            raise ValueError(
+                f"Effective number of Y-axis ticks ({self.y_ticks}) must be at least 2."
+            )
+
+    def _load_config_from_file(self):
+        """
+        Reads settings from an INI configuration file if it exists.
+        Populates self.config_file_settings with found raw string values.
+        """
+        config = configparser.ConfigParser()
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+        except NameError:
+            script_dir = os.getcwd()
+            self.logger.info(
+                f"'__file__' not defined, looking for {CONFIG_FILE_NAME} in CWD: {script_dir}"
+            )
+
+        config_file_path = os.path.join(script_dir, CONFIG_FILE_NAME)
+
+        # self.config_file_settings is initialized in __init__
+        if os.path.exists(config_file_path):
+            try:
+                read_ok = config.read(config_file_path)
+                if (
+                    not read_ok
+                ):  # File was empty or otherwise unreadable by configparser
+                    self.logger.warning(
+                        f"Could not parse '{config_file_path}', though it exists."
+                    )
+                    return
+
+                if "MonitorSettings" in config:
+                    self.logger.info(
+                        f"Configuration file '{config_file_path}' loaded and "
+                        "[MonitorSettings] section found."
+                    )
+                    settings_map = {
+                        "host": config.get("MonitorSettings", "host", fallback=None),
+                        "interval": config.get(
+                            "MonitorSettings", "interval", fallback=None
+                        ),
+                        "ymax": config.get("MonitorSettings", "ymax", fallback=None),
+                        "yticks": config.get(
+                            "MonitorSettings", "yticks", fallback=None
+                        ),
+                    }
+                    for key, value in settings_map.items():
+                        if value is not None:
+                            self.config_file_settings[key] = value
+                else:
+                    self.logger.info(
+                        f"Configuration file '{config_file_path}' loaded, but "
+                        "[MonitorSettings] section not found."
+                    )
+            except configparser.Error as e:
+                self.logger.error(
+                    f"Error parsing configuration file '{config_file_path}': {e}"
+                )
+        else:
+            self.logger.info(
+                f"Configuration file '{config_file_path}' not found. "
+                "Using defaults/CLI arguments."
+            )
 
     def _measure_latency(self) -> float | None:
         """
@@ -144,9 +327,7 @@ class NetworkMonitor:
             )
         else:
             # Linux/macOS expect timeout in seconds
-            timeout_val_for_cmd = str(
-                max(PING_MIN_TIMEOUT_S, int(self.ping_interval))
-            )
+            timeout_val_for_cmd = str(max(PING_MIN_TIMEOUT_S, int(self.ping_interval)))
 
         # Ensure subprocess timeout is always in seconds and slightly larger
         subprocess_timeout = max(
@@ -435,8 +616,7 @@ class NetworkMonitor:
         if self.latency_history_real_values:
             last_real_ping = self.latency_history_real_values[-1]
             if last_real_ping is not None:
-                stats_lines.append(
-                    f"Current Latency: {last_real_ping:.2f} ms")
+                stats_lines.append(f"Current Latency: {last_real_ping:.2f} ms")
             else:
                 stats_lines.append("Current Latency: PING FAILED")
 
@@ -451,14 +631,12 @@ class NetworkMonitor:
                 stats_lines.append("Average (valid pings): N/A")
 
             if min_val is not None:
-                stats_lines.append(
-                    f"Minimum (valid pings): {min_val:.2f} ms")
+                stats_lines.append(f"Minimum (valid pings): {min_val:.2f} ms")
             else:
                 stats_lines.append("Minimum (valid pings): N/A")
 
             if max_val is not None:
-                stats_lines.append(
-                    f"Maximum (valid pings): {max_val:.2f} ms")
+                stats_lines.append(f"Maximum (valid pings): {max_val:.2f} ms")
             else:
                 stats_lines.append("Maximum (valid pings): N/A")
         else:  # No history yet
@@ -538,8 +716,10 @@ class NetworkMonitor:
                 )
                 self.original_terminal_settings = None
         else:
-            self.logger.info("Skipping termios-based terminal settings capture on Windows.")
-            self.original_terminal_settings = None # Ensure it's None on Windows
+            self.logger.info(
+                "Skipping termios-based terminal settings capture on Windows."
+            )
+            self.original_terminal_settings = None  # Ensure it's None on Windows
 
     def _restore_terminal(self):
         """Restores the cursor and original terminal settings (if not on Windows and settings were saved)."""
@@ -555,8 +735,9 @@ class NetworkMonitor:
             except Exception as e:  # pylint: disable=broad-except
                 self.logger.warning(f"Could not restore termios settings: {e}.")
         elif self.current_os == "windows":
-            self.logger.info("Skipping termios-based terminal settings restoration on Windows.")
-
+            self.logger.info(
+                "Skipping termios-based terminal settings restoration on Windows."
+            )
 
     def run(self):
         """Runs the main monitoring loop."""
@@ -573,7 +754,8 @@ class NetworkMonitor:
                     # threshold = self.consecutive_failures_threshold # BUG: This was a local variable
                     # Check if alert threshold is met and not already alerting
                     if (
-                        self.consecutive_ping_failures >= self.consecutive_failures_threshold
+                        self.consecutive_ping_failures
+                        >= self.consecutive_failures_threshold
                         and not self.connection_status_message.startswith("!!!")
                     ):
                         self.connection_status_message = (
@@ -583,7 +765,9 @@ class NetworkMonitor:
                         self.logger.warning(self.connection_status_message)
                     # Softer warning for initial failures below threshold
                     elif (
-                        0 < self.consecutive_ping_failures < self.consecutive_failures_threshold
+                        0
+                        < self.consecutive_ping_failures
+                        < self.consecutive_failures_threshold
                         and not self.connection_status_message.startswith("!!!")
                     ):
                         self.connection_status_message = (
@@ -593,7 +777,10 @@ class NetworkMonitor:
                         self.logger.warning(self.connection_status_message)
                 else:  # Ping successful
                     # If connection was previously lost, log restoration
-                    if self.consecutive_ping_failures >= self.consecutive_failures_threshold:
+                    if (
+                        self.consecutive_ping_failures
+                        >= self.consecutive_failures_threshold
+                    ):
                         self.connection_status_message = (
                             f"INFO: Connection to {self.host} RESTORED "
                             f"after {self.consecutive_ping_failures} "
@@ -691,20 +878,13 @@ def main():
     )
     args = parser.parse_args()
 
-    # Basic argument validation before creating the monitor instance
-    if args.interval <= 0:
-        print(f"Error: Ping interval ({args.interval}s) must be " "greater than zero.")
+    # Create and run the monitor
+    try:
+        monitor = NetworkMonitor(args)
+        monitor.run()
+    except ValueError as e:
+        sys.stderr.write(f"Configuration Error: {e}\n")
         sys.exit(EXIT_CODE_ERROR)
-    if args.ymax <= 0:
-        print(f"Error: Graph Y-max ({args.ymax}ms) must be greater " "than zero.")
-        sys.exit(EXIT_CODE_ERROR)
-    if args.yticks < 2:
-        print(f"Error: Number of Y-axis ticks ({args.yticks}) must be " "at least 2.")
-        sys.exit(EXIT_CODE_ERROR)
-
-    # If arguments are valid, create and run the monitor
-    monitor = NetworkMonitor(args)
-    monitor.run()
 
 
 if __name__ == "__main__":

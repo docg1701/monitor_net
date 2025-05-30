@@ -7,7 +7,8 @@ import sys
 import os
 import time
 # Import real termios for termios.TCSADRAIN constant
-import termios as real_termios
+import termios as real_termios # Renamed to avoid conflict if 'termios' is mocked
+import configparser
 
 # Add the parent directory to sys.path to allow direct import of monitor_net
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -37,9 +38,11 @@ def mock_default_args(mocker):
 def monitor_instance_base(mock_default_args, mocker):
     """Basic NetworkMonitor instance with a fully mocked logger for most tests."""
     # Default to Linux for non-OS-specific tests.
+    # Patch platform.system within monitor_net's context for this fixture.
     with mocker.patch('monitor_net.platform.system', return_value="Linux"):
         monitor = NetworkMonitor(mock_default_args)
 
+    # Fully mock the logger and its methods
     monitor.logger = mocker.MagicMock(spec=logging.Logger)
     for level in ['info', 'warning', 'error', 'critical', 'exception', 'debug']:
         setattr(monitor.logger, level, mocker.MagicMock())
@@ -52,12 +55,14 @@ def monitor_instance_os(request, mocker, mock_default_args):
     different OS environments by mocking platform.system().
     """
     os_name_to_return = request.param
+    # Patch platform.system within monitor_net's context for this fixture
     with mocker.patch('monitor_net.platform.system', return_value=os_name_to_return):
         monitor = NetworkMonitor(mock_default_args)
 
     monitor.logger = mocker.MagicMock(spec=logging.Logger)
     for level in ['info', 'warning', 'error', 'critical', 'exception', 'debug']:
         setattr(monitor.logger, level, mocker.MagicMock())
+    # Store the os_name with the instance for easy access/assertion in tests
     monitor.TEST_OS_NAME = os_name_to_return.lower()
     return monitor
 
@@ -273,43 +278,46 @@ def test_main_custom_args(mocker):
 
 def test_main_invalid_interval(mocker):
     mocker.patch('sys.argv', ['monitor_net.py', '--interval', '0'])
-    mock_monitor_class = mocker.patch('monitor_net.NetworkMonitor')
+    # Let NetworkMonitor be instantiated to trigger the validation error
+    # mock_monitor_class = mocker.patch('monitor_net.NetworkMonitor')
     mock_sys_exit = mocker.patch('sys.exit', side_effect=SystemExit)
-    mocker.patch('builtins.print')
+    mock_stderr_write = mocker.patch('sys.stderr.write')
 
     with pytest.raises(SystemExit):
         main()
 
     mock_sys_exit.assert_called_once_with(EXIT_CODE_ERROR)
-    mock_monitor_class.assert_not_called()
+    # NetworkMonitor.__init__ will be called, and raise ValueError
+    # Check that stderr was called with a message containing the arg problem
+    assert any("Configuration Error: Effective ping interval (0.0s) must be greater than zero" in call_arg[0][0] for call_arg in mock_stderr_write.call_args_list)
+
 
 def test_main_invalid_ymax(mocker):
     mocker.patch('sys.argv', ['monitor_net.py', '--ymax', '-50'])
-    mock_monitor_class = mocker.patch('monitor_net.NetworkMonitor')
     mock_sys_exit = mocker.patch('sys.exit', side_effect=SystemExit)
-    mocker.patch('builtins.print')
+    mock_stderr_write = mocker.patch('sys.stderr.write')
 
     with pytest.raises(SystemExit):
         main()
 
     mock_sys_exit.assert_called_once_with(EXIT_CODE_ERROR)
-    mock_monitor_class.assert_not_called()
+    assert any("Configuration Error: Effective graph Y-max (-50.0ms) must be greater than zero" in call_arg[0][0] for call_arg in mock_stderr_write.call_args_list)
+
 
 def test_main_invalid_yticks(mocker):
     mocker.patch('sys.argv', ['monitor_net.py', '--yticks', '1'])
-    mock_monitor_class = mocker.patch('monitor_net.NetworkMonitor')
     mock_sys_exit = mocker.patch('sys.exit', side_effect=SystemExit)
-    mocker.patch('builtins.print')
+    mock_stderr_write = mocker.patch('sys.stderr.write')
 
     with pytest.raises(SystemExit):
         main()
 
     mock_sys_exit.assert_called_once_with(EXIT_CODE_ERROR)
-    mock_monitor_class.assert_not_called()
+    assert any("Configuration Error: Effective number of Y-axis ticks (1) must be at least 2" in call_arg[0][0] for call_arg in mock_stderr_write.call_args_list)
 
 # --- Integration Test for run() method (using monitor_instance_base) ---
 
-class TestLoopIntegrationExit(Exception):
+class TestLoopIntegrationExit(Exception): # Defined for this test
     pass
 
 def test_network_monitor_run_loop_basic_iterations(monitor_instance_base, mocker):
@@ -415,6 +423,7 @@ def test_restore_terminal_os_awareness(monitor_instance_os, mocker):
 
     if monitor_instance_os.TEST_OS_NAME != "windows":
         mock_termios_module = mocker.patch('monitor_net.termios', spec=real_termios)
+        # Configure the mocked module's TCSADRAIN attribute to have the real value
         mock_termios_module.TCSADRAIN = real_termios.TCSADRAIN
         mock_tcsetattr = mock_termios_module.tcsetattr
 
@@ -436,8 +445,6 @@ def test_restore_terminal_os_awareness(monitor_instance_os, mocker):
     else:
         monitor_instance_os.original_terminal_settings = None
         # Ensure tcsetattr is not called on Windows.
-        # We can mock it on monitor_net.termios if termios itself is importable,
-        # or rely on the fact that original_terminal_settings will be None.
         mock_tcsetattr_win = mocker.patch('monitor_net.termios.tcsetattr', create=True, spec=True)
         monitor_instance_os._restore_terminal()
         mock_tcsetattr_win.assert_not_called()
@@ -446,3 +453,389 @@ def test_restore_terminal_os_awareness(monitor_instance_os, mocker):
         )
 
     mock_stdout_write.assert_any_call(ANSI_SHOW_CURSOR)
+
+
+# --- Tests for Configuration File Logic ---
+
+def test_config_file_not_found(mocker, mock_default_args):
+    """Test behavior when config file does not exist."""
+    # Ensure that NetworkMonitor.__init__ uses the patched os.path.exists
+    mocker.patch('monitor_net.os.path.exists', return_value=False)
+
+    # We need to mock platform.system because it's called early in __init__
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+
+    # Mock the logger on the class itself before instantiation for these init tests
+    mock_logger_on_class = mocker.patch('monitor_net.logging.getLogger').return_value
+    mock_logger_on_class.info = MagicMock()
+    mock_logger_on_class.warning = MagicMock()
+    mock_logger_on_class.error = MagicMock()
+    mock_logger_on_class.handlers = [] # Fix: Add handlers attribute
+
+    monitor = NetworkMonitor(mock_default_args)
+
+    assert monitor.config_file_settings == {}
+    # Check that a message indicating the file was not found is logged
+    found_log = any(
+        f"configuration file '{mocker.ANY}' not found" in call_item[0][0].lower()
+        for call_item in mock_logger_on_class.info.call_args_list
+    ) or any(
+        "not found. using defaults/cli arguments" in call_item[0][0].lower()
+        for call_item in mock_logger_on_class.info.call_args_list
+    )
+    assert found_log, "Log message for config file not found not present"
+
+
+def test_config_file_exists_no_section(mocker, mock_default_args):
+    """Test behavior when config file exists but [MonitorSettings] section is missing."""
+    mocker.patch('monitor_net.os.path.exists', return_value=True)
+
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    # Simulate file read successfully, but section not found
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"] # Indicates file was read
+    # Simulate 'MonitorSettings' section does not exist by controlling __contains__
+    mock_config_parser_instance.__contains__.side_effect = lambda item: item != 'MonitorSettings'
+    # If get is called, it should fallback
+    mock_config_parser_instance.get.return_value = None # Should not be relied upon if section not found
+
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+
+    mock_logger_on_class = mocker.patch('monitor_net.logging.getLogger').return_value
+    mock_logger_on_class.info = MagicMock()
+    mock_logger_on_class.handlers = [] # Fix: Add handlers attribute
+
+    monitor = NetworkMonitor(mock_default_args)
+
+    assert monitor.config_file_settings == {}
+    found_log = any(
+        "section not found" in call_item[0][0].lower()
+        for call_item in mock_logger_on_class.info.call_args_list
+    )
+    assert found_log, "Log message for section not found not present"
+
+
+def test_config_file_exists_with_valid_settings(mocker, mock_default_args):
+    """Test loading valid settings from config file."""
+    mocker.patch('monitor_net.os.path.exists', return_value=True)
+
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"]
+
+    # Simulate 'MonitorSettings' section exists by controlling __contains__
+    mock_config_parser_instance.__contains__.side_effect = lambda item: item == 'MonitorSettings'
+
+    config_values = {
+        # Using a tuple (section, key, fallback_value_passed_to_get) as key for dict
+        ('MonitorSettings', 'host', None): 'config.com',
+        ('MonitorSettings', 'interval', None): '2.2',
+        ('MonitorSettings', 'ymax', None): '120.0',
+        ('MonitorSettings', 'yticks', None): '3'
+    }
+    # side_effect for get: (section, key, fallback=xxx)
+    mock_config_parser_instance.get.side_effect = lambda section, key, fallback: config_values.get((section, key, fallback))
+
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_on_class = mocker.patch('monitor_net.logging.getLogger').return_value # Mock logger
+    mock_logger_on_class.info = MagicMock()
+    mock_logger_on_class.handlers = [] # Fix: Add handlers attribute
+
+
+    monitor = NetworkMonitor(mock_default_args)
+
+    expected_settings = {'host': 'config.com', 'interval': '2.2', 'ymax': '120.0', 'yticks': '3'}
+    assert monitor.config_file_settings == expected_settings
+    # Check for log message about loading the config file
+    found_log = False
+    for call_item in mock_logger_on_class.info.call_args_list:
+        if "configuration file" in call_item[0][0].lower() and "loaded" in call_item[0][0].lower():
+            found_log = True
+            break
+    assert found_log, "Log message for successful config load not found"
+
+
+def test_config_file_parsing_error(mocker, mock_default_args):
+    """Test behavior when configparser raises an error during parsing."""
+    mocker.patch('monitor_net.os.path.exists', return_value=True)
+
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    # Simulate a parsing error
+    mock_config_parser_instance.read.side_effect = configparser.Error("mock parsing error")
+
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+
+    mock_logger_on_class = mocker.patch('monitor_net.logging.getLogger').return_value
+    mock_logger_on_class.error = MagicMock()
+    mock_logger_on_class.handlers = [] # Fix: Add handlers attribute
+
+    monitor = NetworkMonitor(mock_default_args)
+
+    assert monitor.config_file_settings == {}
+    mock_logger_on_class.error.assert_any_call(mocker.ANY)
+    # Check that the error message includes "Error parsing configuration file"
+    assert "error parsing configuration file" in mock_logger_on_class.error.call_args[0][0].lower()
+    assert "mock parsing error" in mock_logger_on_class.error.call_args[0][0].lower()
+
+
+# --- Test for _convert_setting (via NetworkMonitor init) ---
+
+def test_config_value_conversion_error(mocker, mock_default_args):
+    """Test that a config value conversion error logs a warning and uses default."""
+    mocker.patch('monitor_net.os.path.exists', return_value=True) # Config file exists
+
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"]
+    # Simulate 'MonitorSettings' section exists by controlling __contains__
+    mock_config_parser_instance.__contains__.side_effect = lambda item: item == 'MonitorSettings'
+
+    # Simulate 'interval' is 'not_a_float', other valid settings or None
+    def get_side_effect(section, key, fallback):
+        if section == 'MonitorSettings':
+            if key == 'interval':
+                return 'not_a_float' # Invalid value for float conversion
+            if key == 'host':
+                return 'config.host.com' # Valid other value
+        return fallback # For other keys or if section doesn't match
+
+    mock_config_parser_instance.get.side_effect = get_side_effect
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+
+    # Mock the logger that NetworkMonitor will create and use for itself
+    mock_logger_instance = MagicMock(spec=logging.Logger)
+    # Add handlers attribute to the mock logger instance
+    mock_logger_instance.handlers = []
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+
+    # Create monitor instance. _determine_effective_settings will call _convert_setting
+    monitor = NetworkMonitor(mock_default_args)
+
+    # Assert that ping_interval fell back to the default CLI arg value
+    assert monitor.ping_interval == DEFAULT_PING_INTERVAL_SECONDS_ARG
+    # Assert that host was taken from config (to ensure config was partially processed)
+    assert monitor.host == 'config.host.com'
+
+    # Check for the specific warning log from _convert_setting
+    found_warning = False
+    for call_arg in mock_logger_instance.warning.call_args_list:
+        msg = call_arg[0][0] # Get the first positional argument of the call
+        if "Invalid value 'not_a_float' for 'interval'" in msg and "config file. It will be ignored" in msg:
+            found_warning = True
+            break
+    assert found_warning, "Specific warning for conversion error not found"
+
+
+# --- Tests for Precedence Logic in _determine_effective_settings ---
+
+def test_precedence_cli_overrides_config_and_default(mocker, mock_default_args):
+    """Test CLI args override config file, which would override defaults."""
+    # CLI arguments (all custom)
+    mock_default_args.host = "cli.host.com"
+    mock_default_args.interval = 0.5
+    mock_default_args.ymax = 100.0
+    mock_default_args.yticks = 3
+
+    # Config file settings (all different from CLI and defaults)
+    mocker.patch('monitor_net.os.path.exists', return_value=True)
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"]
+    # Simulate 'MonitorSettings' section exists by controlling __contains__
+    mock_config_parser_instance.__contains__.side_effect = lambda item: item == 'MonitorSettings'
+    config_values = {
+        ('MonitorSettings', 'host', None): 'config.host.com',
+        ('MonitorSettings', 'interval', None): '2.5',
+        ('MonitorSettings', 'ymax', None): '250.0',
+        ('MonitorSettings', 'yticks', None): '5'
+    }
+    mock_config_parser_instance.get.side_effect = lambda sec, k, fallback: config_values.get((sec, k, fallback))
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger)
+    mock_logger_instance.handlers = [] # Fix: Add handlers attribute
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+
+    monitor = NetworkMonitor(mock_default_args)
+
+    assert monitor.host == "cli.host.com"
+    assert monitor.ping_interval == 0.5
+    assert monitor.graph_y_max == 100.0
+    assert monitor.y_ticks == 3
+
+    # Check logs for CLI override messages
+    log_calls = [call_arg[0][0] for call_arg in mock_logger_instance.info.call_args_list]
+    assert any("CLI 'host' (cli.host.com) overrides other settings." in msg for msg in log_calls)
+    assert any("CLI 'interval' (0.5) overrides other settings." in msg for msg in log_calls)
+    assert any("CLI 'ymax' (100.0) overrides other settings." in msg for msg in log_calls)
+    assert any("CLI 'yticks' (3) overrides other settings." in msg for msg in log_calls)
+
+def test_precedence_config_overrides_default(mocker, mock_default_args):
+    """Test config file settings override defaults when CLI uses defaults."""
+    # CLI arguments are all defaults (from mock_default_args fixture)
+    # mock_default_args.host = DEFAULT_HOST_ARG etc.
+
+    # Config file settings
+    mocker.patch('monitor_net.os.path.exists', return_value=True)
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"]
+    # Simulate 'MonitorSettings' section exists by controlling __contains__
+    mock_config_parser_instance.__contains__.side_effect = lambda item: item == 'MonitorSettings'
+    config_values = {
+        ('MonitorSettings', 'host', None): 'config.host.com',
+        ('MonitorSettings', 'interval', None): '2.5',
+        ('MonitorSettings', 'ymax', None): '250.0',
+        ('MonitorSettings', 'yticks', None): '5'
+    }
+    mock_config_parser_instance.get.side_effect = lambda sec, k, fallback: config_values.get((sec, k, fallback))
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger)
+    mock_logger_instance.handlers = [] # Fix: Add handlers attribute
+    mock_logger_instance.handlers = [] # Fix: Add handlers attribute
+    mock_logger_instance.handlers = [] # Fix: Add handlers attribute
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+
+    monitor = NetworkMonitor(mock_default_args)
+
+    assert monitor.host == "config.host.com"
+    assert monitor.ping_interval == 2.5
+    assert monitor.graph_y_max == 250.0
+    assert monitor.y_ticks == 5
+
+    # Check logs for config usage messages
+    log_calls = [call_arg[0][0] for call_arg in mock_logger_instance.info.call_args_list]
+    assert any("Using 'host' from config file: config.host.com" in msg for msg in log_calls)
+    assert any("Using 'interval' from config file: 2.5" in msg for msg in log_calls)
+    assert any("Using 'ymax' from config file: 250.0" in msg for msg in log_calls)
+    assert any("Using 'yticks' from config file: 5" in msg for msg in log_calls)
+    # Ensure CLI override messages are NOT present for these
+    assert not any("CLI 'host'" in msg for msg in log_calls)
+
+
+def test_precedence_cli_overrides_default_no_config_file(mocker, mock_default_args):
+    """Test CLI args override defaults when no config file exists."""
+    mock_default_args.host = "my.cli.com"
+    mock_default_args.interval = 1.2
+
+    mocker.patch('monitor_net.os.path.exists', return_value=False) # No config file
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger)
+    mock_logger_instance.handlers = [] # Fix: Add handlers attribute
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+
+    monitor = NetworkMonitor(mock_default_args)
+
+    assert monitor.host == "my.cli.com"
+    assert monitor.ping_interval == 1.2
+    # ymax and yticks should be their defaults as not specified by CLI here
+    assert monitor.graph_y_max == DEFAULT_GRAPH_Y_MAX_ARG
+    assert monitor.y_ticks == DEFAULT_Y_TICKS_ARG
+
+    log_calls = [call_arg[0][0] for call_arg in mock_logger_instance.info.call_args_list]
+    assert any("CLI 'host' (my.cli.com) overrides other settings." in msg for msg in log_calls)
+    assert any("CLI 'interval' (1.2) overrides other settings." in msg for msg in log_calls)
+    assert any("not found. using defaults/cli arguments" in msg.lower() for msg in log_calls)
+
+
+def test_precedence_defaults_used_if_no_cli_custom_no_config(mocker, mock_default_args):
+    """Test defaults are used if CLI args are not custom and no config file."""
+    # mock_default_args already holds default values
+
+    mocker.patch('monitor_net.os.path.exists', return_value=False) # No config file
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger)
+    mock_logger_instance.handlers = [] # Fix: Add handlers attribute
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+
+    monitor = NetworkMonitor(mock_default_args)
+
+    assert monitor.host == DEFAULT_HOST_ARG
+    assert monitor.ping_interval == DEFAULT_PING_INTERVAL_SECONDS_ARG
+    assert monitor.graph_y_max == DEFAULT_GRAPH_Y_MAX_ARG
+    assert monitor.y_ticks == DEFAULT_Y_TICKS_ARG
+
+    log_calls = [call_arg[0][0] for call_arg in mock_logger_instance.info.call_args_list]
+    # Ensure no "CLI ... overrides" messages and no "Using ... from config file" messages
+    assert not any("CLI '" in msg and "overrides" in msg for msg in log_calls)
+    assert not any("from config file" in msg for msg in log_calls)
+    assert any("not found. using defaults/cli arguments" in msg.lower() for msg in log_calls)
+    assert any(f"Effective host: {DEFAULT_HOST_ARG}" in msg for msg in log_calls) # Check effective settings log
+
+
+# --- Tests for Validation Logic in NetworkMonitor.__init__ (raising ValueError) ---
+
+def test_init_validation_error_from_config(mocker, mock_default_args):
+    """Test __init__ raises ValueError for invalid effective setting from config."""
+    mocker.patch('monitor_net.os.path.exists', return_value=True)
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"]
+    # Simulate 'MonitorSettings' section exists by controlling __contains__
+    mock_config_parser_instance.__contains__.side_effect = lambda item: item == 'MonitorSettings'
+    # Config provides an invalid interval
+    config_values = {('MonitorSettings', 'interval', None): '-1.0'}
+    mock_config_parser_instance.get.side_effect = lambda sec, k, fallback: config_values.get((sec, k, fallback), fallback)
+
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger = mocker.patch('logging.getLogger').return_value # Basic logger mock
+    mock_logger.handlers = [] # Fix: Add handlers attribute
+
+    # mock_default_args uses default valid interval, so config will take precedence
+    with pytest.raises(ValueError, match="Effective ping interval \\(-1.0s\\) must be greater than zero"):
+        NetworkMonitor(mock_default_args)
+
+
+def test_init_validation_error_from_cli(mocker, mock_default_args):
+    """Test __init__ raises ValueError for invalid effective setting from CLI."""
+    mock_default_args.interval = -2.0 # Invalid CLI interval
+
+    # Config can be non-existent or valid, CLI should override and fail
+    mocker.patch('monitor_net.os.path.exists', return_value=False)
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_cli_only = mocker.patch('logging.getLogger').return_value
+    mock_logger_cli_only.handlers = [] # Fix: Add handlers attribute
+
+    with pytest.raises(ValueError, match="Effective ping interval \\(-2.0s\\) must be greater than zero"):
+        NetworkMonitor(mock_default_args)
+
+    # Test with a valid config that CLI still overrides
+    mocker.patch('monitor_net.os.path.exists', return_value=True)
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"]
+    type(mock_config_parser_instance).sections = mocker.PropertyMock(return_value=['MonitorSettings'])
+    config_values = {('MonitorSettings', 'interval', None): '1.0'} # Valid config interval
+    mock_config_parser_instance.get.side_effect = lambda sec, k, fallback: config_values.get((sec, k, fallback), fallback)
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+    # Ensure the logger mock is fresh for this part of the test if logging.getLogger is called again
+    # or ensure the previous mock_logger_cli_only is appropriately configured if it's reused.
+    # For simplicity, if NetworkMonitor.__init__ calls getLogger multiple times, this might need adjustment.
+    # However, it typically calls it once.
+
+    with pytest.raises(ValueError, match="Effective ping interval \\(-2.0s\\) must be greater than zero"):
+        NetworkMonitor(mock_default_args)
+
+
+# --- Test for main() function's handling of __init__ ValueError ---
+
+def test_main_catches_config_validation_error(mocker):
+    """Test that main() catches ValueError from NetworkMonitor.__init__ and exits."""
+    # Make NetworkMonitor.__init__ directly raise a ValueError
+    mock_network_monitor_init = mocker.patch(
+        'monitor_net.NetworkMonitor.__init__',
+        side_effect=ValueError("mock validation error from init")
+    )
+
+    # Mock sys.argv for main()
+    mocker.patch('sys.argv', ['monitor_net.py'])
+
+    mock_sys_exit = mocker.patch('sys.exit', side_effect=SystemExit) # To catch the exit
+    mock_stderr_write = mocker.patch('sys.stderr.write')
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    mock_network_monitor_init.assert_called_once() # Ensure __init__ was called
+    mock_stderr_write.assert_any_call("Configuration Error: mock validation error from init\n")
+    mock_sys_exit.assert_called_once_with(EXIT_CODE_ERROR)
+    assert excinfo.type == SystemExit # Check that SystemExit was indeed raised
