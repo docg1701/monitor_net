@@ -1129,6 +1129,87 @@ def test_packet_loss_one_ping_success(monitor_instance_base):
 def test_packet_loss_one_ping_failure(monitor_instance_base):
     monitor_instance_base.latency_history_real_values = [None]
     assert monitor_instance_base._calculate_packet_loss_percentage() == 100.0
+
+
+# --- Tests for _calculate_latency_percentiles ---
+PERCENTILES_TO_TEST = [0.50, 0.95, 0.99]
+
+def test_percentiles_no_data(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = []
+    results = monitor_instance_base._calculate_latency_percentiles(PERCENTILES_TO_TEST)
+    assert results == {p: None for p in PERCENTILES_TO_TEST}
+
+def test_percentiles_one_data_point(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [10.0]
+    results = monitor_instance_base._calculate_latency_percentiles(PERCENTILES_TO_TEST)
+    assert results == {p: None for p in PERCENTILES_TO_TEST}
+
+def test_percentiles_two_data_points(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [10.0, 20.0]
+    results = monitor_instance_base._calculate_latency_percentiles(PERCENTILES_TO_TEST)
+    # Expected from statistics.quantiles([10.0, 20.0], n=100, method='inclusive')
+    # P50 (idx 49) = 10.0
+    # P95 (idx 94) = 20.0
+    # P99 (idx 98) = 20.0
+    assert results[0.50] == pytest.approx(10.0)
+    assert results[0.95] == pytest.approx(20.0)
+    assert results[0.99] == pytest.approx(20.0)
+
+def test_percentiles_sufficient_data(monitor_instance_base):
+    data = [float(i) for i in range(1, 101)] # 1.0 to 100.0
+    monitor_instance_base.latency_history_real_values = data
+    results = monitor_instance_base._calculate_latency_percentiles(PERCENTILES_TO_TEST)
+
+    # Expected from statistics.quantiles(range(1,101), n=100, method='inclusive')
+    # P50 (idx 49) = 50.0
+    # P95 (idx 94) = 95.0
+    # P99 (idx 98) = 99.0
+    assert results[0.50] == pytest.approx(50.0)
+    assert results[0.95] == pytest.approx(95.0)
+    assert results[0.99] == pytest.approx(99.0)
+
+def test_percentiles_with_nones(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [None, 1.0, None, 50.0, None, 100.0, None]
+    # Valid: [1.0, 50.0, 100.0]
+    results = monitor_instance_base._calculate_latency_percentiles(PERCENTILES_TO_TEST)
+
+    # Expected from statistics.quantiles([1.0, 50.0, 100.0], n=100, method='inclusive')
+    # P50 (idx 49) = 50.0
+    # P95 (idx 94) = 100.0
+    # P99 (idx 98) = 100.0
+    assert results[0.50] == pytest.approx(50.0)
+    assert results[0.95] == pytest.approx(100.0)
+    assert results[0.99] == pytest.approx(100.0)
+
+def test_percentiles_invalid_percentile_values(monitor_instance_base):
+    """Test that requesting percentiles outside (0,1) are handled (logged and None)."""
+    monitor_instance_base.latency_history_real_values = [10.0, 20.0, 30.0, 40.0, 50.0]
+    invalid_percentiles = [0.0, 1.0, -0.1, 1.1, 0.75] # Mix of invalid and one valid
+    results = monitor_instance_base._calculate_latency_percentiles(invalid_percentiles)
+
+    assert results[0.0] is None
+    assert results[1.0] is None
+    assert results[-0.1] is None
+    assert results[1.1] is None
+    assert results[0.75] is not None # P75 should be calculable (idx 74) -> 40.0
+    assert results[0.75] == pytest.approx(40.0)
+
+    # Check for warning logs for each invalid percentile
+    log_calls = monitor_instance_base.logger.warning.call_args_list
+    assert any(f"Requested percentile 0.0 is outside the (0,1) exclusive range" in str(call) for call in log_calls)
+    assert any(f"Requested percentile 1.0 is outside the (0,1) exclusive range" in str(call) for call in log_calls)
+    assert any(f"Requested percentile -0.1 is outside the (0,1) exclusive range" in str(call) for call in log_calls)
+    assert any(f"Requested percentile 1.1 is outside the (0,1) exclusive range" in str(call) for call in log_calls)
+
+
+def test_percentiles_statistics_error(monitor_instance_base, mocker):
+    monitor_instance_base.latency_history_real_values = [10.0, 20.0] # Needs at least 2 for quantiles call
+    mocker.patch('monitor_net.statistics.quantiles', side_effect=statistics.StatisticsError("mock quantiles error"))
+    results = monitor_instance_base._calculate_latency_percentiles(PERCENTILES_TO_TEST)
+    assert results == {p: None for p in PERCENTILES_TO_TEST}
+    monitor_instance_base.logger.warning.assert_any_call(
+        "Could not calculate quantiles for latency percentiles: mock quantiles error"
+    )
     assert monitor.resolved_ip is None # Should not be resolved if no output file
 
 

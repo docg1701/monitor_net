@@ -717,6 +717,19 @@ class NetworkMonitor:
             stats_lines.append(f"Std Dev (valid pings): {stdev_val:.2f} ms" if stdev_val is not None else "Std Dev (valid pings): N/A")
             stats_lines.append(f"Jitter (valid pings): {jitter_val:.2f} ms" if jitter_val is not None else "Jitter (valid pings): N/A")
 
+            # Percentiles
+            percentiles_to_show = [0.50, 0.95, 0.99]
+            percentile_values = self._calculate_latency_percentiles(percentiles_to_show)
+
+            p50_val = percentile_values.get(0.50)
+            stats_lines.append(f"P50 (Median): {p50_val:.2f} ms" if p50_val is not None else "P50 (Median): N/A")
+
+            p95_val = percentile_values.get(0.95)
+            stats_lines.append(f"P95 Latency: {p95_val:.2f} ms" if p95_val is not None else "P95 Latency: N/A")
+
+            p99_val = percentile_values.get(0.99)
+            stats_lines.append(f"P99 Latency: {p99_val:.2f} ms" if p99_val is not None else "P99 Latency: N/A")
+
         else:  # No history yet
             stats_lines.append("Current Latency: PING FAILED")
             stats_lines.append("Average (valid pings): N/A")
@@ -724,6 +737,9 @@ class NetworkMonitor:
             stats_lines.append("Maximum (valid pings): N/A")
             stats_lines.append("Std Dev (valid pings): N/A") # Also N/A if no history
             stats_lines.append("Jitter (valid pings): N/A")   # Also N/A if no history
+            stats_lines.append("P50 (Median): N/A")
+            stats_lines.append("P95 Latency: N/A")
+            stats_lines.append("P99 Latency: N/A")
 
         # Packet loss is calculated regardless of whether there's valid latency history,
         # as long as there's any history at all.
@@ -797,6 +813,92 @@ class NetworkMonitor:
         failed_pings = sum(1 for latency in self.latency_history_real_values if latency is None)
 
         return (failed_pings / total_pings) * 100.0
+
+    def _calculate_latency_percentiles(
+        self, percentiles_to_calculate: list[float]
+    ) -> dict[float, float | None]:
+        """
+        Calculates specified latency percentiles from valid historical data.
+
+        Args:
+            percentiles_to_calculate: A list of floats representing the desired
+                                      percentiles (e.g., [0.50, 0.95, 0.99]).
+
+        Returns:
+            A dictionary where keys are the requested percentiles and values are
+            the calculated latency values, or None if calculation is not possible.
+        """
+        results = {p: None for p in percentiles_to_calculate}
+        valid_latencies = [
+            val for val in self.latency_history_real_values if val is not None
+        ]
+
+        # statistics.quantiles requires at least two data points.
+        # Also, for meaningful percentiles like P99 from n=100 divisions,
+        # more points are practically needed, but min requirement for the function is 2.
+        if len(valid_latencies) < 2:
+            return results
+
+        try:
+            # n=100 divides data into 100 intervals, returning 99 cut points (quantiles)
+            # indexed 0 to 98.
+            # P_k (k-th percentile) corresponds to calculated_quantiles[k-1] if k is 1-99.
+            # E.g., P50 (median) is quantiles[49], P95 is quantiles[94], P99 is quantiles[98].
+            # This assumes percentiles_to_calculate are like 0.50, 0.95, 0.99.
+
+            # Sort latencies first, as quantiles expects sorted data for some methods,
+            # and it's good practice if unsure or for alternative percentile calculations.
+            # However, statistics.quantiles does not require pre-sorted data.
+            # For 'inclusive' method, it handles sorting.
+
+            calculated_quantiles = statistics.quantiles(
+                valid_latencies, n=100, method='inclusive'
+            )
+
+            for p in percentiles_to_calculate:
+                if not (0 < p < 1):
+                    self.logger.warning(
+                        f"Requested percentile {p} is outside the (0,1) exclusive range. "
+                        "Only percentiles > 0 and < 1 can be reliably mapped from quantiles(n=100)."
+                    )
+                    continue # Keep results[p] as None
+
+                # Map percentile p to an index in the 99 quantiles (0-98)
+                # Example: p=0.50 (50th percentile) -> index = int(0.50 * 100) - 1 = 49
+                # Example: p=0.95 (95th percentile) -> index = int(0.95 * 100) - 1 = 94
+                # Example: p=0.99 (99th percentile) -> index = int(0.99 * 100) - 1 = 98
+                # The index must be within 0 to len(calculated_quantiles)-1 (i.e., 0-98)
+
+                # Ensure p is scaled correctly if it's e.g. 50 for P50 instead of 0.50
+                # The current percentiles_to_calculate is expected as [0.50, 0.95, 0.99]
+
+                # The k-th percentile is the value such that k% of the data is below it.
+                # quantiles[i] is the value at the (i+1)/n position.
+                # So, for P_x (e.g. P95, x=95), we want the x-th value if data were 100 points.
+                # index = round(p * (n_quantiles_returned + 1)) - 1 approx.
+                # For n=100 (99 values), index = floor(p * 99) could also work for some definitions.
+                # Let's use the direct mapping based on common Px definitions for n=100.
+                # P50 (median) is the 50th value if sorted, for 99 quantiles, it's quantiles[49].
+
+                target_index = int(p * 100) -1
+                if 0 <= target_index < len(calculated_quantiles):
+                    results[p] = calculated_quantiles[target_index]
+                else:
+                    # This case should ideally not be hit if p is 0<p<1.
+                    # For p=1.0 (P100/Max), one would use max(valid_latencies).
+                    # For p=0.0 (P0/Min), one would use min(valid_latencies).
+                    # quantiles(n=100) gives 99 points, not directly P0 or P100.
+                    self.logger.warning(
+                        f"Could not map percentile {p} to a valid index in calculated quantiles."
+                    )
+
+        except statistics.StatisticsError as e:
+            self.logger.warning(f"Could not calculate quantiles for latency percentiles: {e}")
+            # Results dict already initialized with None, so just return it.
+        except IndexError as e: # Should not happen with correct index calculation and 0<p<1
+            self.logger.error(f"IndexError while calculating percentiles: {e}")
+
+        return results
 
     def _update_display_and_status(self):
         """Orchestrates updating the display with status, plot, and statistics."""

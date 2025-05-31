@@ -21,7 +21,7 @@ The tool is configurable via command-line arguments for the target host, ping in
     * Approximate number of ticks on the Y-axis.
 * **CSV Data Logging:** Optionally log all ping data (timestamp, host, resolved IP, latency in ms, success status) to a specified CSV file for later analysis. The CSV file includes the following columns: `Timestamp`, `MonitoredHost`, `ResolvedIP`, `LatencyMS`, `IsSuccess`.
 * **Failure Indication:** Ping failures are visually distinguished on the graph with red 'X' markers at the base (0ms line), while the main data line shows 0ms for these points to maintain Y-axis scaling.
-* **Key Statistics:** Shows current latency, average, minimum, and maximum of successful pings, standard deviation (consistency of ping times), jitter (variation in delay between consecutive pings), packet loss percentage, total monitoring duration, and current consecutive ping failures.
+* **Key Statistics:** Shows current latency, average, P50 (Median), P95, P99, minimum, and maximum of successful pings, standard deviation (consistency of ping times), jitter (variation in delay between consecutive pings), packet loss percentage, total monitoring duration, and current consecutive ping failures.
 * **Environment Setup Script:** Includes a `run_monitor.sh` script (for Linux/macOS/bash environments) to automatically create a Python virtual environment and install dependencies.
 * **User-Friendly Display:** Uses ANSI escape codes for a smoother, non-flickering display update and hides the cursor during operation (terminal feature handling is best on POSIX systems).
 
@@ -36,7 +36,7 @@ This tool is designed to run on:
 
 ## Requirements
 
-*   Python 3.6 or newer.
+*   Python 3.6 or newer for most features. **Important:** Display of percentile statistics (P50, P95, P99) requires Python 3.8+ because the script uses `statistics.quantiles`. The script will likely error on older Python versions if these statistics are enabled and calculated.
 *   The native `ping` utility for your OS must be installed and accessible in your system's PATH.
     *   Linux/macOS: Usually pre-installed or part of `iputils-ping` (Linux).
     *   Windows: `ping.exe` is a standard system utility.
