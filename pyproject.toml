@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+backend-path = ["."] # Ensures setuptools can find its build backend files
+
+[project]
+name = "net-latency-monitor"
+version = "0.1.0" # Initial version
+description = "A real-time network latency monitor with terminal graphing, supporting Linux, macOS, and Windows."
+readme = "README.md"
+requires-python = ">=3.8" # Due to statistics.quantiles for percentile feature
+license = {text = "MIT License"} # Assuming MIT, or specify file = "LICENSE" if one exists
+authors = [
+    {name = "Your Name/Handle", email = "your@email.com"}, # Placeholder
+]
+keywords = ["network", "latency", "ping", "monitor", "terminal", "plotext"]
+
+dependencies = [
+    "plotext>=5.0.0" # Specify a reasonable minimum version for plotext if known, or just "plotext"
+]
+
+# Optional dependencies for development
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-mock>=3.0.0",
+    "flake8>=5.0.0",
+    "black>=22.0.0"
+]
+
+[project.scripts]
+netmonitor = "monitor_net:main"

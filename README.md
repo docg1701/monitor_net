@@ -36,7 +36,7 @@ This tool is designed to run on:
 
 ## Requirements
 
-*   Python 3.6 or newer for most features. **Important:** Display of percentile statistics (P50, P95, P99) requires Python 3.8+ because the script uses `statistics.quantiles`. The script will likely error on older Python versions if these statistics are enabled and calculated.
+*   Python 3.8 or newer. This is required due to features like percentile statistics (which use `statistics.quantiles`) and modern packaging standards.
 *   The native `ping` utility for your OS must be installed and accessible in your system's PATH.
     *   Linux/macOS: Usually pre-installed or part of `iputils-ping` (Linux).
     *   Windows: `ping.exe` is a standard system utility.
@@ -67,13 +67,58 @@ This tool is designed to run on:
     chmod +x run_monitor.sh
     ```
 
+## Installation
+
+This project uses `pyproject.toml` and can be installed as a Python package, which makes the `netmonitor` command available.
+
+### From Local Clone (Recommended for development or direct use)
+
+After cloning the repository (see "Setup Instructions"), you can install the package locally. This is useful for development or if you want to use the `netmonitor` command directly from your environment.
+
+1.  Navigate to the project root directory (where `pyproject.toml` is located).
+2.  Ensure you have Python 3.8+ and pip installed.
+3.  It's highly recommended to use a Python virtual environment:
+    ```bash
+    python -m venv .venv_monitor_net
+    source .venv_monitor_net/bin/activate  # On Linux/macOS
+    # .\.venv_monitor_net\Scripts\activate.bat  # On Windows (cmd) - Note: use .bat
+    # .\.venv_monitor_net\Scripts\Activate.ps1 # On Windows (PowerShell)
+    ```
+4.  Install the package (this will also install `plotext` and other dependencies):
+    ```bash
+    pip install .
+    ```
+5.  To install development dependencies (like `pytest`, `flake8`, etc.) as well:
+    ```bash
+    pip install .[dev]
+    ```
+After installation, the `netmonitor` command should be available in your PATH (if the virtual environment is active).
+
+*(Note: If this package were published to PyPI, you could install it with `pip install net-latency-monitor`.)*
+
 ## How to Use
 
-This script can be run using helper scripts for environment setup and execution, or by setting up the Python environment manually.
+There are several ways to run the network latency monitor:
 
-### Using `run_monitor.sh` (Linux/macOS/Windows with Bash)
+### 1. Using the `netmonitor` Command (After Package Installation)
 
-For users on Linux, macOS, or Windows environments that support Bash (like Git Bash), the `run_monitor.sh` script is the recommended way to start. It performs the following actions:
+If you have installed the package as described in the "Installation" section, this is the recommended way to run the monitor.
+
+```bash
+netmonitor [host] [options]
+# Example:
+netmonitor example.com -i 0.5 --output-file log.csv
+```
+This command will use the Python environment where `net-latency-monitor` was installed.
+All arguments listed under "Available Arguments" can be used.
+
+### 2. Using Helper Scripts (for development or direct run without package installation)
+
+These scripts manage a local virtual environment and run `monitor_net.py` directly.
+
+#### Using `run_monitor.sh` (Linux/macOS/Windows with Bash)
+
+For users on Linux, macOS, or Windows environments that support Bash (like Git Bash). It performs the following actions:
 * Checks for Python 3.
 * Creates a Python virtual environment named `.venv_monitor_net` within the project directory (if it doesn't already exist).
 * Activates the virtual environment.
@@ -96,9 +141,9 @@ You can customize the behavior by passing arguments to `run_monitor.sh`. These a
 ```
 The available options are detailed in the "Available Arguments (for `monitor_net.py`)" section below.
 
-### Using `run_monitor.bat` (Windows Command Prompt / PowerShell)
+#### Using `run_monitor.bat` (Windows Command Prompt / PowerShell)
 
-For users on Windows using the native Command Prompt or PowerShell, the `run_monitor.bat` script is the recommended method. It automates:
+For users on Windows using the native Command Prompt or PowerShell. It automates:
 * A basic check for Python 3 in PATH.
 * Creation of a Python virtual environment (`.venv_monitor_net`) if missing.
 * Installation or update of dependencies from `requirements.txt` using pip from the virtual environment.
@@ -119,10 +164,10 @@ run_monitor.bat example.com -i 0.5 --output-file log.csv
 ```
 The available options are detailed in the "Available Arguments (for `monitor_net.py`)" section below.
 
-### Manual Setup (Any Platform)
+### 3. Manual Setup (Any Platform)
 
-If you prefer or if the helper scripts are not suitable for your environment:
-1.  Ensure Python 3 (3.6+ for core, 3.8+ for percentile stats) is installed and in your PATH.
+If you prefer not to use the helper scripts or install the package, you can set up the environment and run the script manually:
+1.  Ensure Python 3.8+ is installed and in your PATH.
 2.  Create a virtual environment (recommended):
     ```bash
     python -m venv .venv_monitor_net
@@ -135,12 +180,13 @@ If you prefer or if the helper scripts are not suitable for your environment:
     ```bash
     pip install -r requirements.txt
     ```
+    (Note: `requirements.txt` now primarily lists runtime dependencies. For development tools, consider `pip install -e .[dev]` after cloning if you also want to edit the source and have dev tools.)
 5.  Run the script:
     ```bash
     python monitor_net.py [host] [options]
     ```
 
-**Available Arguments (for `monitor_net.py`):**
+**Available Arguments (for `monitor_net.py` or `netmonitor` command):**
 
 * `host`: (Positional, Optional) The host or IP address you want to ping.
     * Default: `1.1.1.1` (as defined by `DEFAULT_HOST_ARG` in the script)
