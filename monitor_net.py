@@ -38,7 +38,7 @@ EXIT_CODE_ERROR = 1
 # --- Configuration Constants ---
 # These are accessed by the NetworkMonitor class constructor
 MAX_DATA_POINTS = 200
-CONSECUTIVE_FAILURES_ALERT_THRESHOLD = 3
+DEFAULT_ALERT_THRESHOLD_ARG = 3 # Renamed from CONSECUTIVE_FAILURES_ALERT_THRESHOLD
 STATUS_MESSAGE_RESERVED_LINES = 3
 
 CONFIG_FILE_NAME = "monitor_config.ini"
@@ -74,8 +74,9 @@ class NetworkMonitor:
 
         # Configuration constants
         self.max_data_points: int = MAX_DATA_POINTS
-        self.consecutive_failures_threshold: int = CONSECUTIVE_FAILURES_ALERT_THRESHOLD
+        # self.consecutive_failures_threshold is effectively replaced by self.alert_threshold
         self.status_message_reserved_lines: int = STATUS_MESSAGE_RESERVED_LINES
+        self.alert_threshold: int = DEFAULT_ALERT_THRESHOLD_ARG # Initialize
 
         # State variables
         self.latency_plot_values: list[float] = []
@@ -179,6 +180,7 @@ class NetworkMonitor:
         final_ymax = DEFAULT_GRAPH_Y_MAX_ARG
         final_yticks = DEFAULT_Y_TICKS_ARG
         final_output_file = None # Default to no output file
+        final_alert_threshold = DEFAULT_ALERT_THRESHOLD_ARG # Default for alert threshold
 
         # 1. Apply Config File Settings (if they exist and are valid)
         cfg_host = self.config_file_settings.get("host")
@@ -218,6 +220,21 @@ class NetworkMonitor:
             final_output_file = cfg_output_file.strip()
             self.logger.info(f"Using 'output_file' from config file: {final_output_file}")
 
+        cfg_alert_threshold_str = self.config_file_settings.get("alert_threshold")
+        if cfg_alert_threshold_str is not None:
+            converted_alert_threshold = NetworkMonitor._convert_setting(
+                cfg_alert_threshold_str, int, "alert_threshold", self.logger
+            )
+            if converted_alert_threshold is not None:
+                if converted_alert_threshold >= 1:
+                    final_alert_threshold = converted_alert_threshold
+                    self.logger.info(f"Using 'alert_threshold' from config file: {final_alert_threshold}")
+                else:
+                    self.logger.warning(
+                        f"Invalid 'alert_threshold' ({converted_alert_threshold}) in config file "
+                        "(must be >= 1). Using default or CLI value."
+                    )
+
         # 2. Apply CLI arguments (these override config and defaults if specified by user)
         # Check if CLI arg is different from its argparse-defined default.
         # If so, the user explicitly set it.
@@ -244,12 +261,19 @@ class NetworkMonitor:
                 f"CLI 'output_file' ({final_output_file}) overrides other settings."
             )
 
+        if cli_args.alert_threshold != DEFAULT_ALERT_THRESHOLD_ARG:
+            final_alert_threshold = cli_args.alert_threshold
+            self.logger.info(
+                f"CLI 'alert_threshold' ({final_alert_threshold}) overrides other settings."
+            )
+
         # Set the final effective settings on the instance
         self.host = final_host
         self.ping_interval = final_interval
         self.graph_y_max = final_ymax
         self.y_ticks = final_yticks
         self.output_file_path = final_output_file
+        self.alert_threshold = final_alert_threshold
 
         # Log final effective settings
         self.logger.info(f"Effective host: {self.host}")
@@ -257,6 +281,7 @@ class NetworkMonitor:
         self.logger.info(f"Effective graph Y-max: {self.graph_y_max}ms")
         self.logger.info(f"Effective Y-axis ticks: {self.y_ticks}")
         self.logger.info(f"Effective output file: {self.output_file_path}")
+        self.logger.info(f"Effective alert threshold: {self.alert_threshold}")
 
 
         # Final validation of effective settings
@@ -271,6 +296,10 @@ class NetworkMonitor:
         if self.y_ticks < 2:
             raise ValueError(
                 f"Effective number of Y-axis ticks ({self.y_ticks}) must be at least 2."
+            )
+        if self.alert_threshold < 1: # Added validation for alert_threshold
+            raise ValueError(
+                f"Effective alert threshold ({self.alert_threshold}) must be 1 or greater."
             )
 
         # Setup CSV file logging if path is provided
@@ -358,6 +387,9 @@ class NetworkMonitor:
                         ),
                         "output_file": config.get(
                             "MonitorSettings", "output_file", fallback=None
+                        ),
+                        "alert_threshold": config.get(
+                            "MonitorSettings", "alert_threshold", fallback=None
                         ),
                     }
                     for key, value in settings_map.items():
@@ -991,7 +1023,7 @@ class NetworkMonitor:
                     # Check if alert threshold is met and not already alerting
                     if (
                         self.consecutive_ping_failures
-                        >= self.consecutive_failures_threshold
+                        >= self.alert_threshold # Use new instance attribute
                         and not self.connection_status_message.startswith("!!!")
                     ):
                         self.connection_status_message = (
@@ -1003,7 +1035,7 @@ class NetworkMonitor:
                     elif (
                         0
                         < self.consecutive_ping_failures
-                        < self.consecutive_failures_threshold
+                        < self.alert_threshold # Use new instance attribute
                         and not self.connection_status_message.startswith("!!!")
                     ):
                         self.connection_status_message = (
@@ -1015,7 +1047,7 @@ class NetworkMonitor:
                     # If connection was previously lost, log restoration
                     if (
                         self.consecutive_ping_failures
-                        >= self.consecutive_failures_threshold
+                        >= self.alert_threshold # Use new instance attribute
                     ):
                         self.connection_status_message = (
                             f"INFO: Connection to {self.host} RESTORED "
@@ -1141,6 +1173,12 @@ def main():
         type=str,
         default=None, # Default to no output file
         help='Path to CSV file for logging latency data.'
+    )
+    parser.add_argument(
+        '-at', '--alert-threshold',
+        type=int,
+        default=DEFAULT_ALERT_THRESHOLD_ARG,
+        help='Number of consecutive ping failures to trigger a connection LOST alert. Must be >= 1.'
     )
     args = parser.parse_args()
 

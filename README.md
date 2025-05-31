@@ -20,7 +20,7 @@ The tool is configurable via command-line arguments for the target host, ping in
     * Reference maximum for the Y-axis of the graph (in ms).
     * Approximate number of ticks on the Y-axis.
 * **CSV Data Logging:** Optionally log all ping data (timestamp, host, resolved IP, latency in ms, success status) to a specified CSV file for later analysis. The CSV file includes the following columns: `Timestamp`, `MonitoredHost`, `ResolvedIP`, `LatencyMS`, `IsSuccess`.
-* **Failure Indication:** Ping failures are visually distinguished on the graph with red 'X' markers at the base (0ms line), while the main data line shows 0ms for these points to maintain Y-axis scaling.
+* **Failure Indication:** Ping failures are visually distinguished on the graph with red 'X' markers at the base (0ms line), while the main data line shows 0ms for these points to maintain Y-axis scaling. A 'connection LOST' alert is triggered after a configurable number of consecutive failures (default is 3).
 * **Key Statistics:** Shows current latency, average, P50 (Median), P95, P99, minimum, and maximum of successful pings, standard deviation (consistency of ping times), jitter (variation in delay between consecutive pings), packet loss percentage, total monitoring duration, and current consecutive ping failures.
 * **Environment Setup Script:** Includes a `run_monitor.sh` script (for Linux/macOS/bash environments) to automatically create a Python virtual environment and install dependencies.
 * **User-Friendly Display:** Uses ANSI escape codes for a smoother, non-flickering display update and hides the cursor during operation (terminal feature handling is best on POSIX systems).
@@ -197,6 +197,7 @@ If you prefer not to use the helper scripts or install the package, you can set 
 * `--yticks YTICKS`: (Optional) Specifies the desired approximate number of discrete tick marks (and their labels) to display on the Y-axis.
     * Default: `6` (as defined by `DEFAULT_Y_TICKS_ARG`)
 * `-o FILEPATH`, `--output-file FILEPATH`: (Optional) Path to a CSV file where latency data will be logged. Each ping attempt (success or failure) will be appended as a new row. If the file doesn't exist, it will be created, including a header row.
+* `-at THRESHOLD`, `--alert-threshold THRESHOLD`: (Optional) Number of consecutive ping failures to trigger a connection LOST alert. Must be an integer >= 1. Default: 3.
 
 ## Configuration File (`monitor_config.ini`)
 
@@ -221,6 +222,7 @@ interval = 2.0
 ymax = 100.0
 yticks = 4
 output_file = /path/to/your/latency_log.csv
+alert_threshold = 5
 ```
 
 **Supported Keys and Types:**
@@ -229,6 +231,7 @@ output_file = /path/to/your/latency_log.csv
 *   `ymax`: The default reference maximum Y-axis value for the graph in milliseconds. (Type: float)
 *   `yticks`: The default approximate number of Y-axis ticks. (Type: int)
 *   `output_file`: Path to the CSV file for logging data. If the path is relative, it's relative to where the script is run. (Type: string)
+*   `alert_threshold`: Number of consecutive failures before triggering a "connection LOST" alert. (Type: integer, must be >= 1)
 
 If the `monitor_config.ini` file contains invalid values (e.g., non-numeric for `interval`), that specific setting will be ignored with a warning message, and the script will fall back to the built-in script default (unless a command-line argument for that setting is provided).
 

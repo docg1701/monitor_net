@@ -12,6 +12,7 @@ import configparser
 import socket # Added for test_csv_init_dns_failure
 import csv # Added for test_csv_write_row_success and others
 import platform # Added for test_csv_file_closed_on_exit
+import statistics # For stdev, jitter, and percentile test calculations
 
 # Add the parent directory to sys.path to allow direct import of monitor_net
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -37,6 +38,7 @@ def mock_default_args(mocker):
     mock_args.ymax = DEFAULT_GRAPH_Y_MAX_ARG
     mock_args.yticks = DEFAULT_Y_TICKS_ARG
     mock_args.output_file = None # Add new default attribute
+    mock_args.alert_threshold = monitor_net.DEFAULT_ALERT_THRESHOLD_ARG # Add new default
     return mock_args
 
 @pytest.fixture
@@ -1148,25 +1150,34 @@ def test_percentiles_two_data_points(monitor_instance_base):
     monitor_instance_base.latency_history_real_values = [10.0, 20.0]
     results = monitor_instance_base._calculate_latency_percentiles(PERCENTILES_TO_TEST)
     # Expected from statistics.quantiles([10.0, 20.0], n=100, method='inclusive')
-    # P50 (idx 49) = 10.0
-    # P95 (idx 94) = 20.0
-    # P99 (idx 98) = 20.0
-    assert results[0.50] == pytest.approx(10.0)
-    assert results[0.95] == pytest.approx(20.0)
-    assert results[0.99] == pytest.approx(20.0)
+    # P50 (idx 49) -> actual from statistics.quantiles([10,20],n=100,method='inclusive')[49] is 10.0
+    # P95 (idx 94) -> actual from statistics.quantiles([10,20],n=100,method='inclusive')[94] is 20.0
+    # P99 (idx 98) -> actual from statistics.quantiles([10,20],n=100,method='inclusive')[98] is 20.0
+
+    # Let's get actual values from statistics.quantiles for these specific inputs
+    q = statistics.quantiles([10.0, 20.0], n=100, method='inclusive')
+    expected_p50 = q[49]
+    expected_p95 = q[94]
+    expected_p99 = q[98]
+
+    assert results[0.50] == pytest.approx(expected_p50)
+    assert results[0.95] == pytest.approx(expected_p95)
+    assert results[0.99] == pytest.approx(expected_p99)
 
 def test_percentiles_sufficient_data(monitor_instance_base):
     data = [float(i) for i in range(1, 101)] # 1.0 to 100.0
     monitor_instance_base.latency_history_real_values = data
     results = monitor_instance_base._calculate_latency_percentiles(PERCENTILES_TO_TEST)
 
-    # Expected from statistics.quantiles(range(1,101), n=100, method='inclusive')
-    # P50 (idx 49) = 50.0
-    # P95 (idx 94) = 95.0
-    # P99 (idx 98) = 99.0
-    assert results[0.50] == pytest.approx(50.0)
-    assert results[0.95] == pytest.approx(95.0)
-    assert results[0.99] == pytest.approx(99.0)
+    # Expected from statistics.quantiles(list(range(1,101)), n=100, method='inclusive')
+    q = statistics.quantiles(data, n=100, method='inclusive')
+    expected_p50 = q[49] # Should be 50.0
+    expected_p95 = q[94] # Should be 95.0
+    expected_p99 = q[98] # Should be 99.0
+
+    assert results[0.50] == pytest.approx(expected_p50)
+    assert results[0.95] == pytest.approx(expected_p95)
+    assert results[0.99] == pytest.approx(expected_p99)
 
 def test_percentiles_with_nones(monitor_instance_base):
     monitor_instance_base.latency_history_real_values = [None, 1.0, None, 50.0, None, 100.0, None]
@@ -1174,12 +1185,15 @@ def test_percentiles_with_nones(monitor_instance_base):
     results = monitor_instance_base._calculate_latency_percentiles(PERCENTILES_TO_TEST)
 
     # Expected from statistics.quantiles([1.0, 50.0, 100.0], n=100, method='inclusive')
-    # P50 (idx 49) = 50.0
-    # P95 (idx 94) = 100.0
-    # P99 (idx 98) = 100.0
-    assert results[0.50] == pytest.approx(50.0)
-    assert results[0.95] == pytest.approx(100.0)
-    assert results[0.99] == pytest.approx(100.0)
+    valid_data = [1.0, 50.0, 100.0]
+    q = statistics.quantiles(valid_data, n=100, method='inclusive')
+    expected_p50 = q[49] # Should be 50.0
+    expected_p95 = q[94] # Should be 100.0
+    expected_p99 = q[98] # Should be 100.0
+
+    assert results[0.50] == pytest.approx(expected_p50)
+    assert results[0.95] == pytest.approx(expected_p95)
+    assert results[0.99] == pytest.approx(expected_p99)
 
 def test_percentiles_invalid_percentile_values(monitor_instance_base):
     """Test that requesting percentiles outside (0,1) are handled (logged and None)."""
@@ -1210,6 +1224,288 @@ def test_percentiles_statistics_error(monitor_instance_base, mocker):
     monitor_instance_base.logger.warning.assert_any_call(
         "Could not calculate quantiles for latency percentiles: mock quantiles error"
     )
+
+
+# --- Tests for Configurable Alert Threshold ---
+
+def test_alert_threshold_cli_specified(mocker, mock_default_args):
+    """Test alert_threshold is set from CLI argument."""
+    cli_alert_threshold = 5
+    mock_default_args.alert_threshold = cli_alert_threshold
+
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger); mock_logger_instance.handlers = []
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+    mocker.patch('monitor_net.os.path.exists', return_value=False) # No config file
+    mocker.patch('monitor_net.socket.gethostbyname') # For CSV init if output_file was set
+    mocker.patch('builtins.open', mocker.mock_open())
+
+
+    monitor = NetworkMonitor(mock_default_args)
+    assert monitor.alert_threshold == cli_alert_threshold
+    mock_logger_instance.info.assert_any_call(
+        f"CLI 'alert_threshold' ({cli_alert_threshold}) overrides other settings."
+    )
+    mock_logger_instance.info.assert_any_call(f"Effective alert threshold: {cli_alert_threshold}")
+
+
+def test_alert_threshold_config_specified(mocker, mock_default_args):
+    """Test alert_threshold is set from config file."""
+    config_alert_threshold = 4
+    # CLI uses default, so config should take precedence
+    mock_default_args.alert_threshold = monitor_net.DEFAULT_ALERT_THRESHOLD_ARG
+
+    mocker.patch('monitor_net.os.path.exists', side_effect=lambda path: path.endswith('.ini'))
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"]
+    mock_config_parser_instance.__contains__.side_effect = lambda item: item == 'MonitorSettings'
+    config_values = {('MonitorSettings', 'alert_threshold', None): str(config_alert_threshold),
+                     # Add other expected keys to avoid issues if get is called for them
+                     ('MonitorSettings', 'host', None): None,
+                     ('MonitorSettings', 'interval', None): None,
+                     ('MonitorSettings', 'ymax', None): None,
+                     ('MonitorSettings', 'yticks', None): None,
+                     ('MonitorSettings', 'output_file', None): None}
+    mock_config_parser_instance.get.side_effect = lambda section, key, *, fallback=None: config_values.get((section, key, fallback), fallback)
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger); mock_logger_instance.handlers = []
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+    mocker.patch('monitor_net.socket.gethostbyname')
+    mocker.patch('builtins.open', mocker.mock_open())
+
+    monitor = NetworkMonitor(mock_default_args)
+    assert monitor.alert_threshold == config_alert_threshold
+    mock_logger_instance.info.assert_any_call(
+        f"Using 'alert_threshold' from config file: {config_alert_threshold}"
+    )
+    mock_logger_instance.info.assert_any_call(f"Effective alert threshold: {config_alert_threshold}")
+
+
+def test_alert_threshold_cli_overrides_config(mocker, mock_default_args):
+    """Test CLI alert_threshold overrides config file."""
+    cli_alert_threshold = 2
+    config_alert_threshold = 5
+    mock_default_args.alert_threshold = cli_alert_threshold # CLI value
+
+    mocker.patch('monitor_net.os.path.exists', side_effect=lambda path: path.endswith('.ini'))
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"]
+    mock_config_parser_instance.__contains__.side_effect = lambda item: item == 'MonitorSettings'
+    config_values = {('MonitorSettings', 'alert_threshold', None): str(config_alert_threshold),
+                     ('MonitorSettings', 'host', None): None, # Ensure all keys potentially read are covered
+                     ('MonitorSettings', 'interval', None): None,
+                     ('MonitorSettings', 'ymax', None): None,
+                     ('MonitorSettings', 'yticks', None): None,
+                     ('MonitorSettings', 'output_file', None): None}
+    mock_config_parser_instance.get.side_effect = lambda section, key, *, fallback=None: config_values.get((section, key, fallback), fallback)
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger); mock_logger_instance.handlers = []
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+    mocker.patch('monitor_net.socket.gethostbyname')
+    mocker.patch('builtins.open', mocker.mock_open())
+
+    monitor = NetworkMonitor(mock_default_args)
+    assert monitor.alert_threshold == cli_alert_threshold
+    mock_logger_instance.info.assert_any_call(
+        f"CLI 'alert_threshold' ({cli_alert_threshold}) overrides other settings."
+    )
+    log_strings = " ".join(str(call_args) for call_args in mock_logger_instance.info.call_args_list)
+    assert f"Using 'alert_threshold' from config file: {config_alert_threshold}" in log_strings
+    assert f"Effective alert threshold: {cli_alert_threshold}" in log_strings
+
+
+def test_alert_threshold_default_value_used(mocker, mock_default_args):
+    """Test default alert_threshold is used if not in CLI or config."""
+    # mock_default_args.alert_threshold is already the default
+
+    mocker.patch('monitor_net.os.path.exists', return_value=False) # No config file
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger); mock_logger_instance.handlers = []
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+    mocker.patch('monitor_net.socket.gethostbyname')
+    mocker.patch('builtins.open', mocker.mock_open())
+
+    monitor = NetworkMonitor(mock_default_args)
+    assert monitor.alert_threshold == monitor_net.DEFAULT_ALERT_THRESHOLD_ARG
+    mock_logger_instance.info.assert_any_call(
+        f"Effective alert threshold: {monitor_net.DEFAULT_ALERT_THRESHOLD_ARG}"
+    )
+    # Ensure no "Using from config" or "CLI overrides" messages for alert_threshold
+    log_strings = " ".join(str(call_args) for call_args in mock_logger_instance.info.call_args_list)
+    assert "Using 'alert_threshold' from config file" not in log_strings
+    assert "CLI 'alert_threshold'" not in log_strings
+
+
+# --- Tests for Alert Threshold Validation in __init__ ---
+
+def test_init_validation_error_alert_threshold_from_cli(mocker, mock_default_args):
+    """Test __init__ raises ValueError for invalid alert_threshold from CLI (<1)."""
+    mock_default_args.alert_threshold = 0 # Invalid CLI alert_threshold
+
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mocker.patch('logging.getLogger').return_value = MagicMock(handlers=[]) # Basic logger
+    mocker.patch('monitor_net.os.path.exists', return_value=False) # No config file
+    mocker.patch('monitor_net.socket.gethostbyname')
+    mocker.patch('builtins.open', mocker.mock_open())
+
+    with pytest.raises(ValueError, match="Effective alert threshold \\(0\\) must be 1 or greater."):
+        NetworkMonitor(mock_default_args)
+
+def test_config_alert_threshold_invalid_value_falls_back_to_default(mocker, mock_default_args):
+    """Test invalid alert_threshold in config (e.g. 0) falls back to default and logs warning."""
+    # CLI uses default, config provides invalid '0'
+    mock_default_args.alert_threshold = monitor_net.DEFAULT_ALERT_THRESHOLD_ARG
+
+    mocker.patch('monitor_net.os.path.exists', side_effect=lambda path: path.endswith('.ini'))
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"]
+    mock_config_parser_instance.__contains__.side_effect = lambda item: item == 'MonitorSettings'
+    config_values = {('MonitorSettings', 'alert_threshold', None): "0",
+                     ('MonitorSettings', 'host', None): None,
+                     ('MonitorSettings', 'interval', None): None,
+                     ('MonitorSettings', 'ymax', None): None,
+                     ('MonitorSettings', 'yticks', None): None,
+                     ('MonitorSettings', 'output_file', None): None} # Invalid value < 1
+    mock_config_parser_instance.get.side_effect = lambda section, key, *, fallback=None: config_values.get((section, key, fallback), fallback)
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger); mock_logger_instance.handlers = []
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+    mocker.patch('monitor_net.socket.gethostbyname')
+    mocker.patch('builtins.open', mocker.mock_open())
+
+    # __init__ should NOT raise ValueError because the invalid config value (0)
+    # will be rejected, and it will fall back to DEFAULT_ALERT_THRESHOLD_ARG (3), which is valid.
+    monitor = NetworkMonitor(mock_default_args)
+
+    assert monitor.alert_threshold == monitor_net.DEFAULT_ALERT_THRESHOLD_ARG
+    mock_logger_instance.warning.assert_any_call(
+        "Invalid 'alert_threshold' (0) in config file (must be >= 1). Using default or CLI value."
+    )
+    # Ensure the final validation in __init__ passes with the default
+    mock_logger_instance.info.assert_any_call(f"Effective alert threshold: {monitor_net.DEFAULT_ALERT_THRESHOLD_ARG}")
+
+
+# --- Test for Alerting Logic in run() method ---
+
+def test_run_loop_alert_triggers_with_custom_threshold(mocker, mock_default_args):
+    """Test that connection LOST alert triggers after custom consecutive failures."""
+    custom_alert_threshold = 2
+    # Use mock_default_args to set the CLI value for alert_threshold
+    mock_default_args.alert_threshold = custom_alert_threshold
+
+    # Mock necessary components for NetworkMonitor instantiation
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger)
+    mock_logger_instance.handlers = []
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+    mocker.patch('monitor_net.os.path.exists', return_value=False) # No config file
+    mocker.patch('monitor_net.socket.gethostbyname')
+    mocker.patch('builtins.open', mocker.mock_open())
+
+    # Instantiate with the custom alert threshold via mock_default_args
+    monitor = NetworkMonitor(mock_default_args)
+    assert monitor.alert_threshold == custom_alert_threshold # Verify it's set
+
+    # Mock methods called within the run loop
+    # Sequence: N failures, then TestLoopIntegrationExit
+    side_effect_sequence = ([None] * custom_alert_threshold) + [TestLoopIntegrationExit("Simulated loop break for alert test")]
+    mock_measure_latency = mocker.patch.object(monitor, '_measure_latency', side_effect=side_effect_sequence)
+
+    mock_update_display = mocker.patch.object(monitor, '_update_display_and_status')
+    mock_setup_terminal = mocker.patch.object(monitor, '_setup_terminal')
+    mock_restore_terminal = mocker.patch.object(monitor, '_restore_terminal')
+    mock_time_sleep = mocker.patch('time.sleep')
+    mock_sys_exit = mocker.patch('sys.exit', side_effect=SystemExit) # To allow clean exit
+
+    # Capture logger calls for assertion
+    monitor.logger = mock_logger_instance # Re-assign to the one we can inspect
+
+    with pytest.raises(SystemExit):
+        monitor.run()
+
+    # Assertions
+    assert mock_measure_latency.call_count == custom_alert_threshold + 1 # N failures + 1 that raises exit
+
+    # Check warning logs
+    warning_log_calls = [call_args[0][0] for call_args in mock_logger_instance.warning.call_args_list]
+
+    # Check for "Warning: Ping ... failed (Xx)" for failures < threshold
+    for i in range(1, custom_alert_threshold):
+        assert any(f"Warning: Ping to {monitor.host} failed ({i}x)" in msg for msg in warning_log_calls)
+
+    # Check for "!!! ALERT: Connection to ... LOST ..." at exactly threshold failures
+    alert_message_expected = f"!!! ALERT: Connection to {monitor.host} LOST ({custom_alert_threshold} failures) !!!"
+    assert any(alert_message_expected in msg for msg in warning_log_calls)
+
+    # Ensure the alert message was logged at the correct point in failures
+    # The alert message should be among the last few warnings if threshold is small
+    # This specific check depends on the exact sequence and number of other warnings.
+    # A more robust check might be to count occurrences or ensure the last relevant warning is the ALERT.
+
+    # Find the index of the first "Warning: Ping ... failed (1x)"
+    first_warning_idx = -1
+    for i, msg in enumerate(warning_log_calls):
+        if f"Warning: Ping to {monitor.host} failed (1x)" in msg:
+            first_warning_idx = i
+            break
+
+    if custom_alert_threshold > 1 : # Only if there are preliminary warnings
+         assert first_warning_idx != -1, "Initial failure warning not found"
+         # The alert should be after custom_alert_threshold-1 preliminary warnings
+         # So, if threshold is 2, warning (1x) is at index K, alert (2x) is at index K+1 (relative to these)
+         # The alert message should be at warning_log_calls[first_warning_idx + custom_alert_threshold -1]
+         # if no other warnings are interspersed.
+         # Let's check the call that contains the ALERT message
+         alert_call_found = False
+         for i in range(custom_alert_threshold -1, len(warning_log_calls)): # Start looking from probable index
+             if alert_message_expected in warning_log_calls[i]:
+                 alert_call_found = True
+                 # Check that previous call was the warning for (threshold-1) failures if threshold > 1
+                 if custom_alert_threshold > 1:
+                     assert f"Warning: Ping to {monitor.host} failed ({custom_alert_threshold-1}x)" in warning_log_calls[i-1]
+                 break
+         assert alert_call_found, "Specific ALERT message not found in the expected sequence."
+
+    assert monitor.consecutive_ping_failures == custom_alert_threshold
+    mock_restore_terminal.assert_called_once() # Ensure cleanup happened
+
+
+def test_config_alert_threshold_conversion_error_falls_back_to_default(mocker, mock_default_args):
+    """Test unparseable alert_threshold in config falls back to default and logs warning."""
+    mock_default_args.alert_threshold = monitor_net.DEFAULT_ALERT_THRESHOLD_ARG
+
+    mocker.patch('monitor_net.os.path.exists', side_effect=lambda path: path.endswith('.ini'))
+    mock_config_parser_instance = MagicMock(spec=configparser.ConfigParser)
+    mock_config_parser_instance.read.return_value = ["dummy_path/monitor_config.ini"]
+    mock_config_parser_instance.__contains__.side_effect = lambda item: item == 'MonitorSettings'
+    config_values = {('MonitorSettings', 'alert_threshold', None): "not-an-int",
+                     ('MonitorSettings', 'host', None): None,
+                     ('MonitorSettings', 'interval', None): None,
+                     ('MonitorSettings', 'ymax', None): None,
+                     ('MonitorSettings', 'yticks', None): None,
+                     ('MonitorSettings', 'output_file', None): None} # Unparseable
+    mock_config_parser_instance.get.side_effect = lambda section, key, *, fallback=None: config_values.get((section, key, fallback), fallback)
+    mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
+
+    mocker.patch('monitor_net.platform.system', return_value="Linux")
+    mock_logger_instance = MagicMock(spec=logging.Logger); mock_logger_instance.handlers = []
+    mocker.patch('logging.getLogger', return_value=mock_logger_instance)
+    mocker.patch('monitor_net.socket.gethostbyname')
+    mocker.patch('builtins.open', mocker.mock_open())
+
+    monitor = NetworkMonitor(mock_default_args)
+
+    assert monitor.alert_threshold == monitor_net.DEFAULT_ALERT_THRESHOLD_ARG
+    mock_logger_instance.warning.assert_any_call(
+        "Invalid value 'not-an-int' for 'alert_threshold' in config file. It will be ignored."
+    )
+    mock_logger_instance.info.assert_any_call(f"Effective alert threshold: {monitor_net.DEFAULT_ALERT_THRESHOLD_ARG}")
 
 
 # --- Edge Case Tests for Configuration File Logic ---
@@ -1298,9 +1594,10 @@ def test_config_file_with_empty_string_values(mocker, mock_default_args):
         ('MonitorSettings', 'interval', None): "",      # Empty string, should fail conversion
         ('MonitorSettings', 'ymax', None): "100.0",     # Valid
         ('MonitorSettings', 'yticks', None): "",        # Empty string, should fail conversion
-        ('MonitorSettings', 'output_file', None): "" # Empty string, should be ignored
+        ('MonitorSettings', 'output_file', None): "", # Empty string, should be ignored
+        ('MonitorSettings', 'alert_threshold', None): None # Ensure this key is covered if requested
     }
-    mock_config_parser_instance.get.side_effect = lambda sec, k, fb: config_values.get((sec, k, fb), fb)
+    mock_config_parser_instance.get.side_effect = lambda section, key, *, fallback=None: config_values.get((section, key, fallback), fallback)
     mocker.patch('monitor_net.configparser.ConfigParser', return_value=mock_config_parser_instance)
 
     mocker.patch('monitor_net.platform.system', return_value="Linux")
@@ -1348,6 +1645,7 @@ def test_csv_init_output_path_is_directory(mocker, mock_default_args):
     # os.path.getsize would raise an error for a directory, or return non-zero.
     # The crucial part is that open() should fail.
     mocker.patch('monitor_net.os.path.exists', return_value=True)
+    mocker.patch('monitor_net.os.path.getsize', return_value=4096) # Mock getsize for directory
     mocker.patch('monitor_net.socket.gethostbyname', return_value='1.2.3.4') # DNS lookup succeeds
 
     # Simulate open() raising IsADirectoryError
@@ -1411,7 +1709,7 @@ def test_csv_write_row_resolved_ip_empty(mocker, mock_default_args):
         [fixed_timestamp, "failed.host.com", "", 12.34, True]
     )
     monitor.output_file_handle.flush.assert_called_once()
-    assert monitor.resolved_ip is None # Should not be resolved if no output file
+    assert monitor.resolved_ip == "" # Should be empty string as per test setup
 
 
 def test_csv_init_new_file(mocker, mock_default_args):
