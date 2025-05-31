@@ -12,6 +12,7 @@ import configparser  # For reading configuration file
 import csv  # For CSV logging
 from datetime import datetime  # For timestamping CSV entries
 import socket # For resolving IP address for CSV logging
+import statistics # For stdev and jitter calculations
 # Note: 'os' is imported near the top of the file already
 
 # --- ANSI Escape Codes ---
@@ -708,11 +709,26 @@ class NetworkMonitor:
                 stats_lines.append(f"Maximum (valid pings): {max_val:.2f} ms")
             else:
                 stats_lines.append("Maximum (valid pings): N/A")
+
+            # New statistics
+            stdev_val = self._calculate_latency_stdev()
+            jitter_val = self._calculate_jitter()
+
+            stats_lines.append(f"Std Dev (valid pings): {stdev_val:.2f} ms" if stdev_val is not None else "Std Dev (valid pings): N/A")
+            stats_lines.append(f"Jitter (valid pings): {jitter_val:.2f} ms" if jitter_val is not None else "Jitter (valid pings): N/A")
+
         else:  # No history yet
             stats_lines.append("Current Latency: PING FAILED")
             stats_lines.append("Average (valid pings): N/A")
             stats_lines.append("Minimum (valid pings): N/A")
             stats_lines.append("Maximum (valid pings): N/A")
+            stats_lines.append("Std Dev (valid pings): N/A") # Also N/A if no history
+            stats_lines.append("Jitter (valid pings): N/A")   # Also N/A if no history
+
+        # Packet loss is calculated regardless of whether there's valid latency history,
+        # as long as there's any history at all.
+        loss_val = self._calculate_packet_loss_percentage()
+        stats_lines.append(f"Packet Loss: {loss_val:.1f}%" if loss_val is not None else "Packet Loss: N/A")
 
         # Format total monitoring time
         h = int(self.total_monitoring_time_seconds // 3600)
@@ -732,6 +748,55 @@ class NetworkMonitor:
         # Clear any part of a previous, longer stats display
         sys.stdout.write(ANSI_CLEAR_FROM_CURSOR_TO_END)
         sys.stdout.flush()
+
+    def _calculate_latency_stdev(self) -> float | None:
+        """Calculates the standard deviation of valid latencies."""
+        valid_latencies = [
+            val for val in self.latency_history_real_values if val is not None
+        ]
+        if len(valid_latencies) < 2:
+            return None  # Standard deviation requires at least 2 data points
+        try:
+            return statistics.stdev(valid_latencies)
+        except statistics.StatisticsError as e:
+            self.logger.warning(f"Could not calculate stdev for latency: {e}")
+            return None
+
+    def _calculate_jitter(self) -> float | None:
+        """
+        Calculates jitter as the standard deviation of the differences
+        between consecutive valid latencies.
+        """
+        valid_latencies = [
+            val for val in self.latency_history_real_values if val is not None
+        ]
+        if len(valid_latencies) < 2: # Need at least 2 latencies for 1 difference
+            return None
+
+        diffs = [
+            valid_latencies[i] - valid_latencies[i-1]
+            for i in range(1, len(valid_latencies))
+        ]
+
+        if len(diffs) < 2: # stdev requires at least 2 differences
+                           # This means we need at least 3 valid latencies initially
+            return None
+
+        try:
+            return statistics.stdev(diffs)
+        except statistics.StatisticsError as e:
+            self.logger.warning(f"Could not calculate jitter: {e}")
+            return None
+
+    def _calculate_packet_loss_percentage(self) -> float | None:
+        """Calculates the percentage of lost packets."""
+        total_pings = len(self.latency_history_real_values)
+        if total_pings == 0:
+            return None # Avoid division by zero if no pings recorded
+
+        failed_pings = sum(1 for latency in self.latency_history_real_values if latency is None)
+
+        return (failed_pings / total_pings) * 100.0
 
     def _update_display_and_status(self):
         """Orchestrates updating the display with status, plot, and statistics."""

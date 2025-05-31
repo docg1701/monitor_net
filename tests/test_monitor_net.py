@@ -1024,6 +1024,111 @@ def test_csv_init_no_output_file(mocker, mock_default_args):
 
     assert monitor.output_file_handle is None
     assert monitor.csv_writer is None
+
+
+# --- Tests for New Statistical Calculation Methods ---
+
+# Note: monitor_instance_base fixture is used, which has a mocked logger.
+# These calculation methods themselves don't log directly unless an unexpected
+# StatisticsError occurs, which is also tested.
+
+def test_stdev_no_data(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = []
+    assert monitor_instance_base._calculate_latency_stdev() is None
+
+def test_stdev_one_data_point(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [10.0]
+    assert monitor_instance_base._calculate_latency_stdev() is None
+
+def test_stdev_multiple_data_points(monitor_instance_base):
+    latencies = [10.0, 20.0, 30.0]
+    monitor_instance_base.latency_history_real_values = latencies
+    expected_stdev = statistics.stdev(latencies)
+    assert monitor_instance_base._calculate_latency_stdev() == pytest.approx(expected_stdev)
+
+def test_stdev_with_nones(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [10.0, None, 20.0, None, 30.0]
+    valid_latencies = [10.0, 20.0, 30.0]
+    expected_stdev = statistics.stdev(valid_latencies)
+    assert monitor_instance_base._calculate_latency_stdev() == pytest.approx(expected_stdev)
+
+def test_stdev_all_same_values(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [20.0, 20.0, 20.0]
+    assert monitor_instance_base._calculate_latency_stdev() == pytest.approx(0.0)
+
+def test_stdev_statistics_error(monitor_instance_base, mocker):
+    """Test that StatisticsError is caught and returns None."""
+    # This case should ideally be covered by <2 data points check,
+    # but testing the except block directly.
+    mocker.patch('statistics.stdev', side_effect=statistics.StatisticsError("mock error"))
+    monitor_instance_base.latency_history_real_values = [10.0, 20.0] # Enough points to pass initial check
+    result = monitor_instance_base._calculate_latency_stdev()
+    assert result is None
+    monitor_instance_base.logger.warning.assert_called_once_with("Could not calculate stdev for latency: mock error")
+
+
+def test_jitter_no_data(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = []
+    assert monitor_instance_base._calculate_jitter() is None
+
+def test_jitter_one_data_point(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [10.0]
+    assert monitor_instance_base._calculate_jitter() is None
+
+def test_jitter_two_data_points(monitor_instance_base):
+    # Needs 2 differences (i.e., 3 data points) for stdev of differences
+    monitor_instance_base.latency_history_real_values = [10.0, 12.0]
+    assert monitor_instance_base._calculate_jitter() is None
+
+def test_jitter_three_data_points_constant(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [10.0, 10.0, 10.0] # Diffs: [0, 0]
+    assert monitor_instance_base._calculate_jitter() == pytest.approx(0.0)
+
+def test_jitter_three_data_points_varying(monitor_instance_base):
+    latencies = [10.0, 15.0, 12.0] # Diffs: [5, -3]
+    monitor_instance_base.latency_history_real_values = latencies
+    expected_jitter = statistics.stdev([5.0, -3.0])
+    assert monitor_instance_base._calculate_jitter() == pytest.approx(expected_jitter)
+
+def test_jitter_with_nones(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [10.0, None, 15.0, 12.0, None, 20.0]
+    # Valid latencies: [10.0, 15.0, 12.0, 20.0]
+    # Diffs: [5.0, -3.0, 8.0]
+    expected_jitter = statistics.stdev([5.0, -3.0, 8.0])
+    assert monitor_instance_base._calculate_jitter() == pytest.approx(expected_jitter)
+
+def test_jitter_statistics_error(monitor_instance_base, mocker):
+    """Test that StatisticsError is caught and returns None for jitter."""
+    mocker.patch('statistics.stdev', side_effect=statistics.StatisticsError("mock error"))
+    monitor_instance_base.latency_history_real_values = [10.0, 20.0, 30.0] # Enough points to pass initial checks
+    result = monitor_instance_base._calculate_jitter()
+    assert result is None
+    monitor_instance_base.logger.warning.assert_called_once_with("Could not calculate jitter: mock error")
+
+
+def test_packet_loss_no_pings(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = []
+    assert monitor_instance_base._calculate_packet_loss_percentage() is None
+
+def test_packet_loss_all_success(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [10.0, 20.0, 30.0]
+    assert monitor_instance_base._calculate_packet_loss_percentage() == 0.0
+
+def test_packet_loss_all_failure(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [None, None, None]
+    assert monitor_instance_base._calculate_packet_loss_percentage() == 100.0
+
+def test_packet_loss_mixed(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [10.0, None, 20.0, None]
+    assert monitor_instance_base._calculate_packet_loss_percentage() == 50.0
+
+def test_packet_loss_one_ping_success(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [10.0]
+    assert monitor_instance_base._calculate_packet_loss_percentage() == 0.0
+
+def test_packet_loss_one_ping_failure(monitor_instance_base):
+    monitor_instance_base.latency_history_real_values = [None]
+    assert monitor_instance_base._calculate_packet_loss_percentage() == 100.0
     assert monitor.resolved_ip is None # Should not be resolved if no output file
 
 
