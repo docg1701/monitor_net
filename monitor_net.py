@@ -11,8 +11,9 @@ import platform  # For OS detection
 import configparser  # For reading configuration file
 import csv  # For CSV logging
 from datetime import datetime  # For timestamping CSV entries
-import socket # For resolving IP address for CSV logging
-import statistics # For stdev and jitter calculations
+import socket  # For resolving IP address for CSV logging
+import statistics  # For stdev and jitter calculations
+
 # Note: 'os' is imported near the top of the file already
 
 # --- ANSI Escape Codes ---
@@ -38,7 +39,7 @@ EXIT_CODE_ERROR = 1
 # --- Configuration Constants ---
 # These are accessed by the NetworkMonitor class constructor
 MAX_DATA_POINTS = 200
-DEFAULT_ALERT_THRESHOLD_ARG = 3 # Renamed from CONSECUTIVE_FAILURES_ALERT_THRESHOLD
+DEFAULT_ALERT_THRESHOLD_ARG = 3  # Renamed from CONSECUTIVE_FAILURES_ALERT_THRESHOLD
 STATUS_MESSAGE_RESERVED_LINES = 3
 
 CONFIG_FILE_NAME = "monitor_config.ini"
@@ -76,7 +77,7 @@ class NetworkMonitor:
         self.max_data_points: int = MAX_DATA_POINTS
         # self.consecutive_failures_threshold is effectively replaced by self.alert_threshold
         self.status_message_reserved_lines: int = STATUS_MESSAGE_RESERVED_LINES
-        self.alert_threshold: int = DEFAULT_ALERT_THRESHOLD_ARG # Initialize
+        self.alert_threshold: int = DEFAULT_ALERT_THRESHOLD_ARG  # Initialize
 
         # State variables
         self.latency_plot_values: list[float] = []
@@ -87,10 +88,10 @@ class NetworkMonitor:
         self.original_terminal_settings = None
         self.current_os: str = ""  # Will be set before logger
         self.config_file_settings: dict = {}  # For settings from INI file
-        self.output_file_path: str | None = None # For CSV logging
-        self.output_file_handle = None # File handle for CSV
-        self.csv_writer = None # CSV writer object
-        self.resolved_ip: str | None = None # Resolved IP of the host for logging
+        self.output_file_path: str | None = None  # For CSV logging
+        self.output_file_handle = None  # File handle for CSV
+        self.csv_writer = None  # CSV writer object
+        self.resolved_ip: str | None = None  # Resolved IP of the host for logging
 
         # Determine OS type first, as it might influence other setups
         self.current_os = platform.system().lower()
@@ -179,8 +180,10 @@ class NetworkMonitor:
         final_interval = DEFAULT_PING_INTERVAL_SECONDS_ARG
         final_ymax = DEFAULT_GRAPH_Y_MAX_ARG
         final_yticks = DEFAULT_Y_TICKS_ARG
-        final_output_file = None # Default to no output file
-        final_alert_threshold = DEFAULT_ALERT_THRESHOLD_ARG # Default for alert threshold
+        final_output_file = None  # Default to no output file
+        final_alert_threshold = (
+            DEFAULT_ALERT_THRESHOLD_ARG  # Default for alert threshold
+        )
 
         # 1. Apply Config File Settings (if they exist and are valid)
         cfg_host = self.config_file_settings.get("host")
@@ -216,9 +219,13 @@ class NetworkMonitor:
                 self.logger.info(f"Using 'yticks' from config file: {final_yticks}")
 
         cfg_output_file = self.config_file_settings.get("output_file")
-        if cfg_output_file is not None and cfg_output_file.strip(): # Ensure not empty string
+        if (
+            cfg_output_file is not None and cfg_output_file.strip()
+        ):  # Ensure not empty string
             final_output_file = cfg_output_file.strip()
-            self.logger.info(f"Using 'output_file' from config file: {final_output_file}")
+            self.logger.info(
+                f"Using 'output_file' from config file: {final_output_file}"
+            )
 
         cfg_alert_threshold_str = self.config_file_settings.get("alert_threshold")
         if cfg_alert_threshold_str is not None:
@@ -228,7 +235,9 @@ class NetworkMonitor:
             if converted_alert_threshold is not None:
                 if converted_alert_threshold >= 1:
                     final_alert_threshold = converted_alert_threshold
-                    self.logger.info(f"Using 'alert_threshold' from config file: {final_alert_threshold}")
+                    self.logger.info(
+                        f"Using 'alert_threshold' from config file: {final_alert_threshold}"
+                    )
                 else:
                     self.logger.warning(
                         f"Invalid 'alert_threshold' ({converted_alert_threshold}) in config file "
@@ -283,7 +292,6 @@ class NetworkMonitor:
         self.logger.info(f"Effective output file: {self.output_file_path}")
         self.logger.info(f"Effective alert threshold: {self.alert_threshold}")
 
-
         # Final validation of effective settings
         if self.ping_interval <= 0:
             raise ValueError(
@@ -297,7 +305,7 @@ class NetworkMonitor:
             raise ValueError(
                 f"Effective number of Y-axis ticks ({self.y_ticks}) must be at least 2."
             )
-        if self.alert_threshold < 1: # Added validation for alert_threshold
+        if self.alert_threshold < 1:  # Added validation for alert_threshold
             raise ValueError(
                 f"Effective alert threshold ({self.alert_threshold}) must be 1 or greater."
             )
@@ -312,7 +320,7 @@ class NetworkMonitor:
                     f"Could not resolve IP for host '{self.host}'. "
                     "IP field in CSV will be blank."
                 )
-                self.resolved_ip = "" # Use empty string for CSV if resolution fails
+                self.resolved_ip = ""  # Use empty string for CSV if resolution fails
 
             file_exists = os.path.exists(self.output_file_path)
             is_empty_file = file_exists and os.path.getsize(self.output_file_path) == 0
@@ -320,17 +328,22 @@ class NetworkMonitor:
             try:
                 # Open in append mode, create if not exists
                 self.output_file_handle = open(
-                    self.output_file_path, 'a', newline='', encoding='utf-8'
+                    self.output_file_path, "a", newline="", encoding="utf-8"
                 )
                 self.csv_writer = csv.writer(self.output_file_handle)
 
                 if not file_exists or is_empty_file:
                     # Write header only if file is new or was empty
-                    self.csv_writer.writerow([
-                        "Timestamp", "MonitoredHost", "ResolvedIP",
-                        "LatencyMS", "IsSuccess"
-                    ])
-                    self.output_file_handle.flush() # Ensure header is written immediately
+                    self.csv_writer.writerow(
+                        [
+                            "Timestamp",
+                            "MonitoredHost",
+                            "ResolvedIP",
+                            "LatencyMS",
+                            "IsSuccess",
+                        ]
+                    )
+                    self.output_file_handle.flush()  # Ensure header is written immediately
             except IOError as e:
                 self.logger.error(
                     f"Error opening or writing header to CSV file "
@@ -341,7 +354,7 @@ class NetworkMonitor:
                     self.output_file_handle.close()
                 self.output_file_handle = None
                 self.csv_writer = None
-                self.output_file_path = None # Disable further attempts
+                self.output_file_path = None  # Disable further attempts
 
     def _load_config_from_file(self):
         """
@@ -746,29 +759,49 @@ class NetworkMonitor:
             stdev_val = self._calculate_latency_stdev()
             jitter_val = self._calculate_jitter()
 
-            stats_lines.append(f"Std Dev (valid pings): {stdev_val:.2f} ms" if stdev_val is not None else "Std Dev (valid pings): N/A")
-            stats_lines.append(f"Jitter (valid pings): {jitter_val:.2f} ms" if jitter_val is not None else "Jitter (valid pings): N/A")
+            stats_lines.append(
+                f"Std Dev (valid pings): {stdev_val:.2f} ms"
+                if stdev_val is not None
+                else "Std Dev (valid pings): N/A"
+            )
+            stats_lines.append(
+                f"Jitter (valid pings): {jitter_val:.2f} ms"
+                if jitter_val is not None
+                else "Jitter (valid pings): N/A"
+            )
 
             # Percentiles
             percentiles_to_show = [0.50, 0.95, 0.99]
             percentile_values = self._calculate_latency_percentiles(percentiles_to_show)
 
             p50_val = percentile_values.get(0.50)
-            stats_lines.append(f"P50 (Median): {p50_val:.2f} ms" if p50_val is not None else "P50 (Median): N/A")
+            stats_lines.append(
+                f"P50 (Median): {p50_val:.2f} ms"
+                if p50_val is not None
+                else "P50 (Median): N/A"
+            )
 
             p95_val = percentile_values.get(0.95)
-            stats_lines.append(f"P95 Latency: {p95_val:.2f} ms" if p95_val is not None else "P95 Latency: N/A")
+            stats_lines.append(
+                f"P95 Latency: {p95_val:.2f} ms"
+                if p95_val is not None
+                else "P95 Latency: N/A"
+            )
 
             p99_val = percentile_values.get(0.99)
-            stats_lines.append(f"P99 Latency: {p99_val:.2f} ms" if p99_val is not None else "P99 Latency: N/A")
+            stats_lines.append(
+                f"P99 Latency: {p99_val:.2f} ms"
+                if p99_val is not None
+                else "P99 Latency: N/A"
+            )
 
         else:  # No history yet
             stats_lines.append("Current Latency: PING FAILED")
             stats_lines.append("Average (valid pings): N/A")
             stats_lines.append("Minimum (valid pings): N/A")
             stats_lines.append("Maximum (valid pings): N/A")
-            stats_lines.append("Std Dev (valid pings): N/A") # Also N/A if no history
-            stats_lines.append("Jitter (valid pings): N/A")   # Also N/A if no history
+            stats_lines.append("Std Dev (valid pings): N/A")  # Also N/A if no history
+            stats_lines.append("Jitter (valid pings): N/A")  # Also N/A if no history
             stats_lines.append("P50 (Median): N/A")
             stats_lines.append("P95 Latency: N/A")
             stats_lines.append("P99 Latency: N/A")
@@ -776,7 +809,11 @@ class NetworkMonitor:
         # Packet loss is calculated regardless of whether there's valid latency history,
         # as long as there's any history at all.
         loss_val = self._calculate_packet_loss_percentage()
-        stats_lines.append(f"Packet Loss: {loss_val:.1f}%" if loss_val is not None else "Packet Loss: N/A")
+        stats_lines.append(
+            f"Packet Loss: {loss_val:.1f}%"
+            if loss_val is not None
+            else "Packet Loss: N/A"
+        )
 
         # Format total monitoring time
         h = int(self.total_monitoring_time_seconds // 3600)
@@ -818,16 +855,16 @@ class NetworkMonitor:
         valid_latencies = [
             val for val in self.latency_history_real_values if val is not None
         ]
-        if len(valid_latencies) < 2: # Need at least 2 latencies for 1 difference
+        if len(valid_latencies) < 2:  # Need at least 2 latencies for 1 difference
             return None
 
         diffs = [
-            valid_latencies[i] - valid_latencies[i-1]
+            valid_latencies[i] - valid_latencies[i - 1]
             for i in range(1, len(valid_latencies))
         ]
 
-        if len(diffs) < 2: # stdev requires at least 2 differences
-                           # This means we need at least 3 valid latencies initially
+        if len(diffs) < 2:  # stdev requires at least 2 differences
+            # This means we need at least 3 valid latencies initially
             return None
 
         try:
@@ -840,9 +877,11 @@ class NetworkMonitor:
         """Calculates the percentage of lost packets."""
         total_pings = len(self.latency_history_real_values)
         if total_pings == 0:
-            return None # Avoid division by zero if no pings recorded
+            return None  # Avoid division by zero if no pings recorded
 
-        failed_pings = sum(1 for latency in self.latency_history_real_values if latency is None)
+        failed_pings = sum(
+            1 for latency in self.latency_history_real_values if latency is None
+        )
 
         return (failed_pings / total_pings) * 100.0
 
@@ -884,7 +923,7 @@ class NetworkMonitor:
             # For 'inclusive' method, it handles sorting.
 
             calculated_quantiles = statistics.quantiles(
-                valid_latencies, n=100, method='inclusive'
+                valid_latencies, n=100, method="inclusive"
             )
 
             for p in percentiles_to_calculate:
@@ -893,7 +932,7 @@ class NetworkMonitor:
                         f"Requested percentile {p} is outside the (0,1) exclusive range. "
                         "Only percentiles > 0 and < 1 can be reliably mapped from quantiles(n=100)."
                     )
-                    continue # Keep results[p] as None
+                    continue  # Keep results[p] as None
 
                 # Map percentile p to an index in the 99 quantiles (0-98)
                 # Example: p=0.50 (50th percentile) -> index = int(0.50 * 100) - 1 = 49
@@ -912,7 +951,7 @@ class NetworkMonitor:
                 # Let's use the direct mapping based on common Px definitions for n=100.
                 # P50 (median) is the 50th value if sorted, for 99 quantiles, it's quantiles[49].
 
-                target_index = int(p * 100) -1
+                target_index = int(p * 100) - 1
                 if 0 <= target_index < len(calculated_quantiles):
                     results[p] = calculated_quantiles[target_index]
                 else:
@@ -925,9 +964,13 @@ class NetworkMonitor:
                     )
 
         except statistics.StatisticsError as e:
-            self.logger.warning(f"Could not calculate quantiles for latency percentiles: {e}")
+            self.logger.warning(
+                f"Could not calculate quantiles for latency percentiles: {e}"
+            )
             # Results dict already initialized with None, so just return it.
-        except IndexError as e: # Should not happen with correct index calculation and 0<p<1
+        except (
+            IndexError
+        ) as e:  # Should not happen with correct index calculation and 0<p<1
             self.logger.error(f"IndexError while calculating percentiles: {e}")
 
         return results
@@ -1023,7 +1066,7 @@ class NetworkMonitor:
                     # Check if alert threshold is met and not already alerting
                     if (
                         self.consecutive_ping_failures
-                        >= self.alert_threshold # Use new instance attribute
+                        >= self.alert_threshold  # Use new instance attribute
                         and not self.connection_status_message.startswith("!!!")
                     ):
                         self.connection_status_message = (
@@ -1035,7 +1078,7 @@ class NetworkMonitor:
                     elif (
                         0
                         < self.consecutive_ping_failures
-                        < self.alert_threshold # Use new instance attribute
+                        < self.alert_threshold  # Use new instance attribute
                         and not self.connection_status_message.startswith("!!!")
                     ):
                         self.connection_status_message = (
@@ -1047,7 +1090,7 @@ class NetworkMonitor:
                     # If connection was previously lost, log restoration
                     if (
                         self.consecutive_ping_failures
-                        >= self.alert_threshold # Use new instance attribute
+                        >= self.alert_threshold  # Use new instance attribute
                     ):
                         self.connection_status_message = (
                             f"INFO: Connection to {self.host} RESTORED "
@@ -1075,25 +1118,27 @@ class NetworkMonitor:
                 if self.csv_writer:
                     timestamp = datetime.now().isoformat()
                     is_success = current_latency_real is not None
-                    latency_ms_for_csv = current_latency_real if is_success else ''
+                    latency_ms_for_csv = current_latency_real if is_success else ""
                     row_data = [
                         timestamp,
                         self.host,
-                        self.resolved_ip if self.resolved_ip else '',
+                        self.resolved_ip if self.resolved_ip else "",
                         latency_ms_for_csv,
-                        is_success
+                        is_success,
                     ]
                     try:
                         self.csv_writer.writerow(row_data)
-                        if self.output_file_handle: # Should exist if csv_writer exists
+                        if self.output_file_handle:  # Should exist if csv_writer exists
                             self.output_file_handle.flush()
                     except IOError as e:
-                        self.logger.error(f"Error writing to CSV file: {e}. Disabling further CSV logging.")
+                        self.logger.error(
+                            f"Error writing to CSV file: {e}. Disabling further CSV logging."
+                        )
                         if self.output_file_handle:
                             self.output_file_handle.close()
                         self.csv_writer = None
                         self.output_file_handle = None
-                        self.output_file_path = None # To prevent re-opening
+                        self.output_file_path = None  # To prevent re-opening
 
                 # Update data for history (accurate values for stats)
                 if len(self.latency_history_real_values) >= self.max_data_points:
@@ -1169,16 +1214,18 @@ def main():
         help="Desired approximate number of Y-axis ticks.",
     )
     parser.add_argument(
-        '-o', '--output-file',
+        "-o",
+        "--output-file",
         type=str,
-        default=None, # Default to no output file
-        help='Path to CSV file for logging latency data.'
+        default=None,  # Default to no output file
+        help="Path to CSV file for logging latency data.",
     )
     parser.add_argument(
-        '-at', '--alert-threshold',
+        "-at",
+        "--alert-threshold",
         type=int,
         default=DEFAULT_ALERT_THRESHOLD_ARG,
-        help='Number of consecutive ping failures to trigger a connection LOST alert. Must be >= 1.'
+        help="Number of consecutive ping failures to trigger a connection LOST alert. Must be >= 1.",
     )
     args = parser.parse_args()
 
