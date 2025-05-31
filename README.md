@@ -69,13 +69,16 @@ This tool is designed to run on:
 
 ## How to Use
 
-### For Linux, macOS, or Windows with Bash (e.g., Git Bash):
+This script can be run using helper scripts for environment setup and execution, or by setting up the Python environment manually.
 
-The `run_monitor.sh` script is the recommended way to start the latency monitor. It performs the following actions:
+### Using `run_monitor.sh` (Linux/macOS/Windows with Bash)
+
+For users on Linux, macOS, or Windows environments that support Bash (like Git Bash), the `run_monitor.sh` script is the recommended way to start. It performs the following actions:
 * Checks for Python 3.
 * Creates a Python virtual environment named `.venv_monitor_net` within the project directory (if it doesn't already exist).
-* Activates the virtual environment and installs (or updates) the Python dependencies listed in `requirements.txt`.
-* Executes the main `monitor_net.py` script with any provided arguments.
+* Activates the virtual environment.
+* Installs or updates the Python dependencies listed in `requirements.txt`.
+* Executes the main `monitor_net.py` script, forwarding any provided arguments.
 
 **Running with Default Settings:**
 To start monitoring with the default settings (pinging `1.1.1.1` every `1.0` seconds, graph Y-axis reference up to `200ms`, and `6` Y-axis ticks):
@@ -84,31 +87,57 @@ To start monitoring with the default settings (pinging `1.1.1.1` every `1.0` sec
 ```
 
 **Using Command-Line Arguments:**
-You can customize the behavior by passing arguments to `run_monitor.sh`. These arguments are then forwarded to the `monitor_net.py` script.
-
+You can customize the behavior by passing arguments to `run_monitor.sh`. These arguments are then forwarded to `monitor_net.py`.
 **Syntax:**
 ```bash
-./run_monitor.sh [host] [-i INTERVAL] [--ymax YMAX] [--yticks YTICKS]
+./run_monitor.sh [host] [options]
+# Example:
+./run_monitor.sh example.com -i 0.5 --output-file log.csv
+```
+The available options are detailed in the "Available Arguments (for `monitor_net.py`)" section below.
+
+### Using `run_monitor.bat` (Windows Command Prompt / PowerShell)
+
+For users on Windows using the native Command Prompt or PowerShell, the `run_monitor.bat` script is the recommended method. It automates:
+* A basic check for Python 3 in PATH.
+* Creation of a Python virtual environment (`.venv_monitor_net`) if missing.
+* Installation or update of dependencies from `requirements.txt` using pip from the virtual environment.
+* Execution of `monitor_net.py`, passing along any command-line arguments.
+
+**Running with Default Settings:**
+Double-click `run_monitor.bat` or run from the command line:
+```cmd
+run_monitor.bat
 ```
 
-### For Windows (without Bash, e.g., Command Prompt / PowerShell):
+**Using Command-Line Arguments:**
+Arguments are passed to `monitor_net.py`.
+```cmd
+run_monitor.bat [host] [options]
+REM Example:
+run_monitor.bat example.com -i 0.5 --output-file log.csv
+```
+The available options are detailed in the "Available Arguments (for `monitor_net.py`)" section below.
 
-1.  **Ensure Python 3 is in your PATH.**
-2.  **Create a virtual environment (recommended):**
-    ```cmd
+### Manual Setup (Any Platform)
+
+If you prefer or if the helper scripts are not suitable for your environment:
+1.  Ensure Python 3 (3.6+ for core, 3.8+ for percentile stats) is installed and in your PATH.
+2.  Create a virtual environment (recommended):
+    ```bash
     python -m venv .venv_monitor_net
     ```
-3.  **Activate the virtual environment:**
-    ```cmd
-    .\.venv_monitor_net\Scripts\activate
-    ```
-4.  **Install dependencies:**
-    ```cmd
+3.  Activate the virtual environment:
+    *   Linux/macOS: `source .venv_monitor_net/bin/activate`
+    *   Windows (cmd): `.\.venv_monitor_net\Scripts\activate.bat`
+    *   Windows (PowerShell): `.\.venv_monitor_net\Scripts\Activate.ps1`
+4.  Install dependencies:
+    ```bash
     pip install -r requirements.txt
     ```
-5.  **Run the script:**
-    ```cmd
-    python monitor_net.py [host] [-i INTERVAL] [--ymax YMAX] [--yticks YTICKS]
+5.  Run the script:
+    ```bash
+    python monitor_net.py [host] [options]
     ```
 
 **Available Arguments (for `monitor_net.py`):**
@@ -190,6 +219,7 @@ To stop the script, press `Ctrl+C` in the terminal where it is running.
 
 * `monitor_net.py`: The main Python script containing the monitoring and plotting logic.
 * `run_monitor.sh`: A shell script (for Linux/macOS/Bash) that automates the setup of the Python virtual environment, installation of dependencies, and execution of `monitor_net.py`.
+* `run_monitor.bat`: A Windows batch script that automates the setup of the Python virtual environment, installation of dependencies, and execution of `monitor_net.py`.
 * `requirements.txt`: A file listing the Python package dependencies.
 * `ROADMAP.md`: Outlines potential future improvements and features.
 * `README.md`: This file, providing documentation for the project.
