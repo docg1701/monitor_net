@@ -132,19 +132,22 @@ class NetworkMonitor:
             # Regex for Windows might be like: "Average = Xms", or "Minimum = Xms, Maximum = Yms, Average = Zms"
             # A common pattern for individual time is "time=XXms" or "Reply from ... time<XXms"
             # This regex aims for "time=Xms" or "time<Xms" or "Time: Xms" etc.
-            self.ping_regex = re.compile(r"time(?:<|=)(\d+)\s*ms", re.IGNORECASE)
+            ping_pattern_windows = r"time(?:<|=)(\d+)\s*ms"
+            self.ping_regex = re.compile(ping_pattern_windows, re.IGNORECASE)
             self.ping_timeout_is_ms = True
         elif self.current_os == "darwin":  # macOS
             # For macOS: ping -c 1 -t <timeout_s> <host>
             # Timeout is in seconds.
             self.ping_cmd_parts = ["ping", "-c", "1", "-t"]
-            self.ping_regex = re.compile(r"time=([0-9\.]+)\s*ms", re.IGNORECASE)
+            ping_pattern_darwin = r"time=([0-9\.]+)\s*ms"
+            self.ping_regex = re.compile(ping_pattern_darwin, re.IGNORECASE)
             self.ping_timeout_is_ms = False
         else:  # Default to Linux
             # For Linux: ping -c 1 -W <timeout_s> <host>
             # Timeout is in seconds (-W for Linux, -t for macOS uses same unit)
             self.ping_cmd_parts = ["ping", "-c", "1", "-W"]
-            self.ping_regex = re.compile(r"time=([0-9\.]+)\s*ms", re.IGNORECASE)
+            ping_pattern_linux = r"time=([0-9\.]+)\s*ms"
+            self.ping_regex = re.compile(ping_pattern_linux, re.IGNORECASE)
             self.ping_timeout_is_ms = False
 
     @staticmethod
@@ -223,9 +226,10 @@ class NetworkMonitor:
             cfg_output_file is not None and cfg_output_file.strip()
         ):  # Ensure not empty string
             final_output_file = cfg_output_file.strip()
-            self.logger.info(
-                f"Using 'output_file' from config file: {final_output_file}"
+            log_message = (
+                "Using 'output_file' from config file: " f"{final_output_file}"
             )
+            self.logger.info(log_message)
 
         cfg_alert_threshold_str = self.config_file_settings.get("alert_threshold")
         if cfg_alert_threshold_str is not None:
@@ -266,9 +270,10 @@ class NetworkMonitor:
         # So, if cli_args.output_file is not None, the user specified it.
         if cli_args.output_file is not None:
             final_output_file = cli_args.output_file
-            self.logger.info(
-                f"CLI 'output_file' ({final_output_file}) overrides other settings."
+            log_message = (
+                f"CLI 'output_file' ({final_output_file}) " "overrides other settings."
             )
+            self.logger.info(log_message)
 
         if cli_args.alert_threshold != DEFAULT_ALERT_THRESHOLD_ARG:
             final_alert_threshold = cli_args.alert_threshold
@@ -345,10 +350,12 @@ class NetworkMonitor:
                     )
                     self.output_file_handle.flush()  # Ensure header is written immediately
             except IOError as e:
-                self.logger.error(
+                log_message = (
                     f"Error opening or writing header to CSV file "
-                    f"'{self.output_file_path}': {e}. CSV logging will be disabled."
+                    f"'{self.output_file_path}': {e}. "
+                    "CSV logging will be disabled."
                 )
+                self.logger.error(log_message)
                 # Ensure these are None if setup fails
                 if self.output_file_handle:
                     self.output_file_handle.close()
@@ -1225,7 +1232,10 @@ def main():
         "--alert-threshold",
         type=int,
         default=DEFAULT_ALERT_THRESHOLD_ARG,
-        help="Number of consecutive ping failures to trigger a connection LOST alert. Must be >= 1.",
+        help=(
+            "Number of consecutive ping failures to trigger a "
+            "connection LOST alert. Must be >= 1."
+        ),
     )
     args = parser.parse_args()
 
