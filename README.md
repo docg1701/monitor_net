@@ -8,7 +8,7 @@ A Python command-line tool to monitor and graph your internet connection latency
 
 This script provides a continuously updating text-based graph of network ping latency to a specified host. It also displays key statistics such as current, average, minimum, and maximum latency, total monitoring time, and a count of consecutive ping failures. Failures are clearly marked on the graph.
 
-The tool is configurable via command-line arguments for the target host, ping interval, Y-axis maximum reference, and the number of Y-axis ticks, or alternatively, through a `monitor_config.ini` file. It leverages the native `ping` command of the underlying operating system.
+Configuration is managed via CLI arguments or a `monitor_config.ini` file. The script uses the OS's native `ping` command.
 
 ## Features
 
@@ -32,7 +32,6 @@ This tool is designed to run on:
 *   **macOS (Darwin):** Fully featured, including `termios`.
 *   **Windows:** Functionally supported. The native Windows `ping` command is used.
     *   Terminal restoration via `termios` is skipped (as `termios` is POSIX-specific). Basic ANSI escape codes for cursor control are attempted and should work in modern Windows terminals (like Windows Terminal or PowerShell Core).
-    *   Users may need to run the script directly using `python monitor_net.py` (see "How to Use on Windows").
 
 ## Requirements
 
@@ -40,12 +39,11 @@ This tool is designed to run on:
 *   The native `ping` utility for your OS must be installed and accessible in your system's PATH.
     *   Linux/macOS: Usually pre-installed or part of `iputils-ping` (Linux).
     *   Windows: `ping.exe` is a standard system utility.
-*   Python dependencies (installed by `run_monitor.sh` or manually with `pip`):
+*   Python runtime dependencies (automatically installed if using `pip install .` or via helper scripts):
     *   `plotext` (for creating graphs in the terminal)
-    *   `pytest` (for running tests, development only)
-    *   `pytest-mock` (for running tests, development only)
+*   For development dependencies (like `pytest`, `flake8`, etc.), please see the "Installation" section on how to install them using `pip install .[dev]`.
 
-## Setup Instructions
+## Getting the Code
 
 1.  **Clone the Repository (or Download Files):**
     If you have Git installed, clone the repository:
@@ -53,7 +51,7 @@ This tool is designed to run on:
     git clone https://github.com/galvani4987/monitor_net.git
     cd monitor_net
     ```
-    Alternatively, download the files (`monitor_net.py`, `run_monitor.sh`, `requirements.txt`) into a directory on your system.
+    Alternatively, download the files (`monitor_net.py`, `run_monitor.sh`, `run_monitor.bat`, `requirements.txt`, `pyproject.toml`) into a directory on your system.
 
 2.  **Navigate to the Project Directory:**
     Open your terminal (or command prompt) and change to the directory where you cloned or downloaded the files.
@@ -73,7 +71,7 @@ This project uses `pyproject.toml` and can be installed as a Python package, whi
 
 ### From Local Clone (Recommended for development or direct use)
 
-After cloning the repository (see "Setup Instructions"), you can install the package locally. This is useful for development or if you want to use the `netmonitor` command directly from your environment.
+After cloning the repository (see "Getting the Code"), you can install the package locally. This is useful for development or if you want to use the `netmonitor` command directly from your environment.
 
 1.  Navigate to the project root directory (where `pyproject.toml` is located).
 2.  Ensure you have Python 3.8+ and pip installed.
@@ -137,7 +135,7 @@ You can customize the behavior by passing arguments to `run_monitor.sh`. These a
 ```bash
 ./run_monitor.sh [host] [options]
 # Example:
-./run_monitor.sh example.com -i 0.5 --output-file log.csv
+./run_monitor.sh example.com -i 0.5 --output-file log.csv 
 ```
 The available options are detailed in the "Available Arguments (for `monitor_net.py`)" section below.
 
@@ -170,7 +168,7 @@ If you prefer not to use the helper scripts or install the package, you can set 
 1.  Ensure Python 3.8+ is installed and in your PATH.
 2.  Create a virtual environment (recommended):
     ```bash
-    python -m venv .venv_monitor_net
+    python -m venv .venv_monitor_net 
     ```
 3.  Activate the virtual environment:
     *   Linux/macOS: `source .venv_monitor_net/bin/activate`
@@ -178,9 +176,9 @@ If you prefer not to use the helper scripts or install the package, you can set 
     *   Windows (PowerShell): `.\.venv_monitor_net\Scripts\Activate.ps1`
 4.  Install dependencies:
     ```bash
-    pip install -r requirements.txt
+    pip install -r requirements.txt 
     ```
-    (Note: `requirements.txt` now primarily lists runtime dependencies. For development tools, consider `pip install -e .[dev]` after cloning if you also want to edit the source and have dev tools.)
+    (Note: `requirements.txt` now primarily lists runtime dependencies. For development tools, consider `pip install .[dev]` after cloning if you also want to edit the source and have dev tools.)
 5.  Run the script:
     ```bash
     python monitor_net.py [host] [options]
@@ -189,15 +187,17 @@ If you prefer not to use the helper scripts or install the package, you can set 
 **Available Arguments (for `monitor_net.py` or `netmonitor` command):**
 
 * `host`: (Positional, Optional) The host or IP address you want to ping.
-    * Default: `1.1.1.1` (as defined by `DEFAULT_HOST_ARG` in the script)
+    * Default: `1.1.1.1`
 * `-i INTERVAL`, `--interval INTERVAL`: (Optional) The time in seconds between each ping. Accepts float values (e.g., 0.5).
-    * Default: `1.0` second (as defined by `DEFAULT_PING_INTERVAL_SECONDS_ARG`)
+    * Default: `1.0` second
 * `--ymax YMAX`: (Optional) Sets the reference maximum value for the Y-axis of the graph, in milliseconds. The graph will display at least up to this value but will auto-expand if latency spikes exceed it.
-    * Default: `200.0` ms (as defined by `DEFAULT_GRAPH_Y_MAX_ARG`)
+    * Default: `200.0` ms
 * `--yticks YTICKS`: (Optional) Specifies the desired approximate number of discrete tick marks (and their labels) to display on the Y-axis.
-    * Default: `6` (as defined by `DEFAULT_Y_TICKS_ARG`)
+    * Default: `6`
 * `-o FILEPATH`, `--output-file FILEPATH`: (Optional) Path to a CSV file where latency data will be logged. Each ping attempt (success or failure) will be appended as a new row. If the file doesn't exist, it will be created, including a header row.
-* `-at THRESHOLD`, `--alert-threshold THRESHOLD`: (Optional) Number of consecutive ping failures to trigger a connection LOST alert. Must be an integer >= 1. Default: 3.
+    * Default: None
+* `-at THRESHOLD`, `--alert-threshold THRESHOLD`: (Optional) Number of consecutive ping failures to trigger a connection LOST alert. Must be an integer >= 1. 
+    * Default: 3
 
 ## Configuration File (`monitor_config.ini`)
 
@@ -270,6 +270,7 @@ To stop the script, press `Ctrl+C` in the terminal where it is running.
 * `run_monitor.sh`: A shell script (for Linux/macOS/Bash) that automates the setup of the Python virtual environment, installation of dependencies, and execution of `monitor_net.py`.
 * `run_monitor.bat`: A Windows batch script that automates the setup of the Python virtual environment, installation of dependencies, and execution of `monitor_net.py`.
 * `requirements.txt`: A file listing the Python package dependencies.
+* `pyproject.toml`: Defines project metadata and build dependencies for packaging.
 * `ROADMAP.md`: Outlines potential future improvements and features.
 * `README.md`: This file, providing documentation for the project.
 * `.gitignore`: Specifies intentionally untracked files that Git should ignore.
@@ -279,7 +280,7 @@ To stop the script, press `Ctrl+C` in the terminal where it is running.
 
 * **`CRITICAL ERROR: 'ping' command not found...`**: Ensure the `ping` utility is installed on your system and is in your system's PATH.
 * **Graph not displaying well / `WARNING: Calculated plot area is too small...`**: Try increasing the height and width of your terminal window. The script attempts to adapt, but very small terminal sizes can limit graph rendering.
-* **Python errors**: Ensure you have Python 3.6+ installed and that dependencies from `requirements.txt` are installed in your active environment.
+* **Python errors**: Ensure you have Python 3.8+ installed and that dependencies from `requirements.txt` are installed in your active environment.
 
 ## Contributing
 

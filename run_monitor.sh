@@ -44,8 +44,8 @@ fi
 # 3. Install/update dependencies using the virtual environment's pip
 if [ -s "$REQUIREMENTS_FILE_PATH" ]; then
     echo "INFO: Installing/updating dependencies from '$REQUIREMENTS_FILE' in the virtual environment..."
-    # "$@" passes all command-line arguments received by run_monitor.sh to pip install
-    # (though unlikely to be used by pip here) and more importantly,
+    # "$@" passes all command-line arguments received by run_monitor.sh to pip install 
+    # (though unlikely to be used by pip here) and more importantly, 
     # to the python script later.
     "$PIP_EXEC" install --disable-pip-version-check --no-cache-dir -r "$REQUIREMENTS_FILE_PATH"
     if [ $? -ne 0 ]; then
