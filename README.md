@@ -80,7 +80,26 @@ This tool is designed to run on:
 
 ## Installation
 
-This project uses `pyproject.toml` and can be installed as a Python package, which makes the `netmonitor` command available.
+Once the package is available on PyPI, you can install it using pip:
+
+```bash
+pip install net-latency-monitor
+```
+
+This will install the script and its dependencies. After installation, you should be able
+to run the monitor directly from your terminal:
+
+```bash
+netmonitor your.target.host
+```
+
+### Installing from TestPyPI (for testing)
+
+If you want to install a pre-release or test version from TestPyPI, you can use:
+
+```bash
+pip install --index-url https://test.pypi.org/simple/ net-latency-monitor
+```
 
 ### From Local Clone (Recommended for development or direct use)
 
