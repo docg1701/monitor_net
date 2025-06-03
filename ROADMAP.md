@@ -11,8 +11,8 @@ This document outlines the implementation plan for the suggested improvements to
     * [X] Install `flake8` and `black` in the development environment (`pip install flake8 black`).
     * [X] Run `flake8 monitor_net.py` and fix all reported warnings and errors.
     * [X] Run `black monitor_net.py` to format the code automatically.
-    * [ ] Add a configuration file for `flake8` (e.g., `.flake8`) if customizations are needed.
-    * [ ] Consider adding a pre-commit hook (e.g., with `pre-commit`) to automate style checking before each commit.
+    * [X] Add a configuration file for `flake8` (e.g., `.flake8`) if customizations are needed. (Superseded by ruff configuration in `pyproject.toml`)
+    * [X] Consider adding a pre-commit hook (e.g., with `pre-commit`) to automate style checking before each commit. (Ruff hooks for linting and formatting added in `.pre-commit-config.yaml`)
 
 ### 1.2. Constants for ANSI Codes and "Magic Numbers"
 * **Objective:** Improve readability and maintainability by replacing hardcoded values with named constants.
@@ -95,7 +95,7 @@ This document outlines the implementation plan for the suggested improvements to
         * [X] CLI argument validation. (Done for `main()`)
         * [X] (If a class is implemented) Test class initialization and the logic of its main methods.
     * [X] Consider simple integration tests that simulate running the monitor for a few cycles (can be more complex). (Done for `run()` method)
-    * [ ] Integrate test execution into a script or Makefile.
+    * [X] Integrate test execution into a script or Makefile. (Makefile includes a 'test' target using pytest)
 
 ### 4.2. Improvements to `run_monitor.sh` Script (Minor)
 * **Objective:** Small adjustments for robustness.
@@ -188,13 +188,10 @@ This roadmap is a suggestion and can be adjusted as needed. It is recommended to
     *   [ ] This would significantly increase complexity with `plotext`. May require a different plotting approach or library.
     *   [ ] Could involve saving all data and then providing an option to generate a static plot of a larger history.
 
-### 8.3. Refine Flake8 E501s
-*   **Objective:** Further reduce or eliminate E501 (line too long) errors.
+### 8.3. Formatting and Line Length (Handled by Ruff)
+*   **Objective:** Ensure consistent formatting and adherence to line length.
 *   **Considerations:**
-    *   [X] Carefully re-wrap long docstrings and comments.
-    *   [X] Break down complex f-strings or logical conditions further.
-    *   [X] This is lower priority if it compromises readability of documentation.
-    *   [!] Note: Persistent E501 (line too long) errors exist due to conflicts between `black` auto-formatting and `flake8`'s 88-character limit. Some lines that `black` formats to be >88 chars are currently unaddressed. Manual application of `# noqa: E501` is needed after `black` runs, which is challenging with current automated pre-commit hooks.
+    *   [X] This is now handled by `ruff format` (integrated into pre-commit) and the `line-length = 88` setting in `pyproject.toml` for `ruff`. The previous flake8-specific E501 issues are superseded by ruff's formatter.
 
 This roadmap provides a comprehensive list of potential future enhancements.
 Priorities can be adjusted based on user feedback and development resources.
