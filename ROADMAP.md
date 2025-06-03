@@ -167,8 +167,8 @@ This roadmap is a suggestion and can be adjusted as needed. It is recommended to
 *   **Objective:** Allow users to interact with the running monitor (e.g., pause, change settings).
 *   **Considerations:**
     *   [ ] This is complex for a terminal UI. Might involve `curses` or a more advanced TUI library if `plotext` doesn't support it.
-    *   [ ] Could start with simple signal handling (e.g., a signal to toggle pause).
-    *   [ ] Example commands: pause/resume, change target host, clear history.
+    * [X] Could start with simple signal handling (e.g., a signal to toggle pause). (Implemented SIGUSR1 for pause/resume)
+    * [X] Example commands: pause/resume (done), [ ] change target host, [ ] clear history.
 
 ## Phase 8: Advanced Features & Polish
 
