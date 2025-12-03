@@ -1,0 +1,7 @@
+{
+  "name": "netmonitor",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular"
+}
