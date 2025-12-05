@@ -90,12 +90,13 @@ As a **DevOps Engineer**, I want to **configure a GitHub Action workflow that bu
 IV1: Pushing a `v1.0.0` tag triggers the action.
 IV2: The action completes all jobs green.
 
-### Story 8: Android Release Build Pipeline
-As a **Mobile Developer**, I want to **generate a signed Android APK/AAB**, so that **I can publish the mobile version alongside the desktop versions.**
+### Story 8: Mobile Release Build Pipeline (Android & iOS)
+As a **Mobile Developer**, I want to **generate signed Android APK/AAB and iOS IPA files**, so that **I can publish the mobile versions alongside the desktop versions.**
 #### Acceptance Criteria
-1: The build process generates a signed release APK.
-2: The Android build is integrated into the GitHub Release workflow (or documented manual upload).
-3: The APK installs and runs on a physical Android device.
+1: The build process generates a signed release APK for Android.
+2: The build process generates an IPA (or Xcode archive) for iOS (via Capacitor).
+3: The Android/iOS builds are integrated into the GitHub Release workflow (or documented manual upload if signing automation is blocked).
+4: The APK and IPA install and run on physical devices.
 
 ### Story 9: v1.0 Final Verification
 As a **QA Specialist**, I want to **install and run the generated artifacts on each platform**, so that **I can validate the application works as expected before public announcement.**
@@ -104,3 +105,4 @@ As a **QA Specialist**, I want to **install and run the generated artifacts on e
 2: Linux AppImage runs; Tauri backend functions.
 3: macOS .app runs (checking for quarantine/signing issues).
 4: Android APK installs; network monitoring functions.
+5: iOS IPA installs (via TestFlight or ad-hoc); application launches successfully.
