@@ -1,7 +1,7 @@
 {
   "name": "netmonitor",
   "version": "0.0.1",
-  "main": "electron/main.js",
+
   "author": "Ionic Framework",
   "homepage": "https://ionicframework.com/",
   "scripts": {
@@ -11,7 +11,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "lint": "ng lint",
-    "electron:start": "ng build && electron .",
+
     "android:run": "ionic cap run android",
     "tauri": "tauri",
     "tauri:dev": "tauri dev"
@@ -57,8 +57,6 @@
     "@types/jasmine": "~5.1.0",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
-    "electron": "^39.2.5",
-    "electron-builder": "^26.0.12",
     "eslint": "^9.16.0",
     "eslint-plugin-import": "^2.29.1",
     "eslint-plugin-jsdoc": "^48.2.1",
@@ -72,38 +70,5 @@
     "karma-jasmine-html-reporter": "~2.1.0",
     "typescript": "~5.9.0"
   },
-  "description": "An Ionic project",
-  "build": {
-    "appId": "io.ionic.starter",
-    "productName": "NetMonitor",
-    "files": [
-      "www/**/*",
-      "electron/**/*",
-      "package.json",
-      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
-      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
-      "!**/node_modules/*.d.ts",
-      "!**/node_modules/.bin",
-      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
-      "!.editorconfig",
-      "!**/._*",
-      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
-      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
-      "!**/{appveyor.yml,.travis.yml,circle.yml}",
-      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}",
-      "!**/node_modules/@rollup/rollup-darwin-arm64",
-      "!**/node_modules/@rollup/rollup-darwin-x64",
-      "!**/node_modules/@rollup/rollup-linux-arm64-gnu",
-      "!**/node_modules/@rollup/rollup-linux-arm64-musl",
-      "!**/node_modules/@rollup/rollup-win32-arm64-msvc",
-      "!**/node_modules/@rollup/rollup-win32-ia32-msvc",
-      "!**/node_modules/@rollup/rollup-win32-x64-msvc"
-    ],
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Utility"
-    }
-  }
+  "description": "An Ionic project"
 }
