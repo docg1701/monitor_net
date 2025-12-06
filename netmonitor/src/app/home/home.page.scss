@@ -1,6 +1,6 @@
 .chart-container {
   position: relative;
-  height: 40vh;
+  height: 55vh;
   width: 100%;
 }
 
@@ -12,4 +12,10 @@ ion-card-title {
 ion-card-subtitle {
   text-transform: uppercase;
   font-size: 0.8rem;
+}
+
+.button-container {
+  padding: 16px 16px 0 16px; /* Standard padding top/left/right, 0 bottom */
+  display: flex;
+  justify-content: center;
 }

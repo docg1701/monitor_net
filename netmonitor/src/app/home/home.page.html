@@ -70,8 +70,8 @@
     </ion-row>
   </ion-grid>
 
-  <div class="ion-padding">
-    <ion-button expand="block" (click)="toggleMonitoring()" [color]="isMonitoring ? 'danger' : 'success'">
+  <div class="button-container">
+    <ion-button (click)="toggleMonitoring()" [color]="isMonitoring ? 'danger' : 'success'">
       {{ isMonitoring ? 'Stop Monitoring' : 'Start Monitoring' }}
     </ion-button>
   </div>

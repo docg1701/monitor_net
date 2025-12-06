@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "NetMonitor",
-  "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "version": "1.0.0",
+  "identifier": "com.galvani.netmonitor",
   "build": {
     "frontendDist": "../www",
     "devUrl": "http://localhost:4200",
@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "NetMonitor",
-        "width": 800,
-        "height": 600,
+        "width": 1004,
+        "height": 627,
         "resizable": true,
         "fullscreen": false
       }
