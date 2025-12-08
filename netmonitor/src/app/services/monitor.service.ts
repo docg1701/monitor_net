@@ -1,9 +1,9 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { BehaviorSubject, Observable, Subscription, timer, from, of } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 import { PingResult } from '../models/ping-result.interface';
 import { environment } from '../../environments/environment';
-import { invoke } from '@tauri-apps/api/core';
+import { TauriService } from './tauri.service';
 
 // Define the structure expected from Rust
 interface RustPingResult {
@@ -17,7 +17,7 @@ interface RustPingResult {
 export class MonitorService {
   private pingResults$ = new BehaviorSubject<PingResult[]>([]);
   private timerSubscription: Subscription | null = null;
-  // private http = inject(HttpClient); // Not used anymore
+  private tauriService = inject(TauriService);
 
   get results$(): Observable<PingResult[]> {
     return this.pingResults$.asObservable();
@@ -25,7 +25,7 @@ export class MonitorService {
 
   measureLatency(url: string): Observable<PingResult> {
     // Wrap the Promise returned by invoke in an Observable
-    return from(invoke<RustPingResult>('ping', { url })).pipe(
+    return from(this.tauriService.invoke<RustPingResult>('ping', { url })).pipe(
       map((res) => {
         if (res.success) {
           return {

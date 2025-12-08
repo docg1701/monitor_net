@@ -28,6 +28,8 @@ export class HomePage implements OnInit, OnDestroy {
   subscription: Subscription | null = null;
   isMonitoring = false;
   isDark = false;
+  private themeQuery: MediaQueryList | null = null;
+  private themeListener: ((e: MediaQueryListEvent) => void) | null = null;
 
   constructor() {
     addIcons({ sunnyOutline, moonOutline });
@@ -69,20 +71,7 @@ export class HomePage implements OnInit, OnDestroy {
 
 
   ngOnInit() {
-    // Load theme preference
-    const savedTheme = localStorage.getItem('netmonitor-theme');
-    if (savedTheme === 'dark') {
-      this.isDark = true;
-      document.body.classList.add('ion-palette-dark');
-    } else {
-      this.isDark = false;
-      document.body.classList.remove('ion-palette-dark');
-    }
-
-    // Wait for style application
-    setTimeout(() => {
-      this.updateChartTheme(); 
-    }, 0);
+    this.initializeTheme();
 
     this.subscription = this.monitorService.results$.subscribe(results => {
       this.results = results;
@@ -92,21 +81,48 @@ export class HomePage implements OnInit, OnDestroy {
     });
   }
 
-  toggleTheme() {
-    this.isDark = !this.isDark;
+  private initializeTheme() {
+    this.themeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    // Define listener
+    this.themeListener = (e: MediaQueryListEvent) => {
+      const savedTheme = localStorage.getItem('netmonitor-theme');
+      if (!savedTheme) {
+        this.setTheme(e.matches);
+      }
+    };
+
+    // Add listener
+    this.themeQuery.addEventListener('change', this.themeListener);
+
+    // Initial check
+    const savedTheme = localStorage.getItem('netmonitor-theme');
+    if (savedTheme) {
+      this.setTheme(savedTheme === 'dark');
+    } else {
+      this.setTheme(this.themeQuery.matches);
+    }
+  }
+
+  private setTheme(isDark: boolean) {
+    this.isDark = isDark;
     if (this.isDark) {
       document.body.classList.add('ion-palette-dark');
-      localStorage.setItem('netmonitor-theme', 'dark');
     } else {
       document.body.classList.remove('ion-palette-dark');
-      localStorage.setItem('netmonitor-theme', 'light');
     }
     
-    // Allow CSS to propagate before reading variables
+    // Wait for style application
     setTimeout(() => {
         this.updateChartTheme();
-        this.chart?.update(); 
-    }, 100);
+        this.chart?.update();
+    }, 0);
+  }
+
+  toggleTheme() {
+    const newIsDark = !this.isDark;
+    this.setTheme(newIsDark);
+    localStorage.setItem('netmonitor-theme', newIsDark ? 'dark' : 'light');
   }
 
   private updateChartTheme() {
@@ -123,6 +139,9 @@ export class HomePage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    if (this.themeQuery && this.themeListener) {
+      this.themeQuery.removeEventListener('change', this.themeListener);
+    }
     if (this.subscription) {
       this.subscription.unsubscribe();
     }
