@@ -1,7 +1,20 @@
+.content-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* Ensure it takes full height of ion-content */
+  overflow: hidden; /* Prevent internal scrolling if possible */
+}
+
 .chart-container {
   position: relative;
-  height: 55vh;
+  flex: 1; /* Allow chart to grow and shrink */
+  min-height: 150px; /* Reduced minimum height */
   width: 100%;
+}
+
+ion-grid {
+  flex-shrink: 0; /* Prevent grid from shrinking */
+  padding-bottom: 0;
 }
 
 ion-card-title {
@@ -17,7 +30,8 @@ ion-card-subtitle {
 }
 
 .button-container {
-  padding: 16px 16px 0 16px; /* Standard padding top/left/right, 0 bottom */
+  padding: 0 16px 32px 16px; /* Removed top padding, increased bottom padding */
   display: flex;
   justify-content: center;
+  flex-shrink: 0; /* Prevent button container from shrinking */
 }

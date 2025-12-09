@@ -21,63 +21,65 @@
     </ion-toolbar>
   </ion-header>
 
-  <div class="chart-container ion-padding">
-    <canvas baseChart
-      [data]="lineChartData"
-      [options]="lineChartOptions"
-      [type]="'line'"
-      [legend]="lineChartLegend">
-    </canvas>
-  </div>
+  <div class="content-wrapper">
+    <div class="chart-container">
+      <canvas baseChart
+        [data]="lineChartData"
+        [options]="lineChartOptions"
+        [type]="'line'"
+        [legend]="lineChartLegend">
+      </canvas>
+    </div>
 
-  <ion-grid>
-    <ion-row>
-      <ion-col size="12" size-md="6" size-lg="2.4">
-        <ion-card>
-          <ion-card-header>
-            <ion-card-subtitle>Current</ion-card-subtitle>
-            <ion-card-title>{{ stats.current | number:'1.0-2' }} ms</ion-card-title>
-          </ion-card-header>
-        </ion-card>
-      </ion-col>
-      <ion-col size="6" size-md="6" size-lg="2.4">
-        <ion-card>
-          <ion-card-header>
-            <ion-card-subtitle>Average</ion-card-subtitle>
-            <ion-card-title>{{ stats.avg | number:'1.0-2' }} ms</ion-card-title>
-          </ion-card-header>
-        </ion-card>
-      </ion-col>
-      <ion-col size="6" size-md="6" size-lg="2.4">
-        <ion-card>
-          <ion-card-header>
-            <ion-card-subtitle>Min</ion-card-subtitle>
-            <ion-card-title>{{ stats.min | number:'1.0-2' }} ms</ion-card-title>
-          </ion-card-header>
-        </ion-card>
-      </ion-col>
-      <ion-col size="6" size-md="6" size-lg="2.4">
-        <ion-card>
-          <ion-card-header>
-            <ion-card-subtitle>Max</ion-card-subtitle>
-            <ion-card-title>{{ stats.max | number:'1.0-2' }} ms</ion-card-title>
-          </ion-card-header>
-        </ion-card>
-      </ion-col>
-      <ion-col size="6" size-md="6" size-lg="2.4">
-        <ion-card>
-          <ion-card-header>
-            <ion-card-subtitle>Jitter</ion-card-subtitle>
-            <ion-card-title>{{ stats.jitter | number:'1.0-2' }} ms</ion-card-title>
-          </ion-card-header>
-        </ion-card>
-      </ion-col>
-    </ion-row>
-  </ion-grid>
+    <ion-grid>
+      <ion-row>
+        <ion-col size="12" size-md="6" size-lg="4" size-xl="2.4">
+          <ion-card>
+            <ion-card-header>
+              <ion-card-subtitle>Current</ion-card-subtitle>
+              <ion-card-title>{{ stats.current | number:'1.0-2' }} ms</ion-card-title>
+            </ion-card-header>
+          </ion-card>
+        </ion-col>
+        <ion-col size="6" size-md="4" size-lg="4" size-xl="2.4">
+          <ion-card>
+            <ion-card-header>
+              <ion-card-subtitle>Average</ion-card-subtitle>
+              <ion-card-title>{{ stats.avg | number:'1.0-2' }} ms</ion-card-title>
+            </ion-card-header>
+          </ion-card>
+        </ion-col>
+        <ion-col size="6" size-md="4" size-lg="4" size-xl="2.4">
+          <ion-card>
+            <ion-card-header>
+              <ion-card-subtitle>Min</ion-card-subtitle>
+              <ion-card-title>{{ stats.min | number:'1.0-2' }} ms</ion-card-title>
+            </ion-card-header>
+          </ion-card>
+        </ion-col>
+        <ion-col size="6" size-md="4" size-lg="4" size-xl="2.4">
+          <ion-card>
+            <ion-card-header>
+              <ion-card-subtitle>Max</ion-card-subtitle>
+              <ion-card-title>{{ stats.max | number:'1.0-2' }} ms</ion-card-title>
+            </ion-card-header>
+          </ion-card>
+        </ion-col>
+        <ion-col size="6" size-md="4" size-lg="4" size-xl="2.4">
+          <ion-card>
+            <ion-card-header>
+              <ion-card-subtitle>Jitter</ion-card-subtitle>
+              <ion-card-title>{{ stats.jitter | number:'1.0-2' }} ms</ion-card-title>
+            </ion-card-header>
+          </ion-card>
+        </ion-col>
+      </ion-row>
+    </ion-grid>
 
-  <div class="button-container">
-    <ion-button (click)="toggleMonitoring()" [color]="isMonitoring ? 'danger' : 'success'">
-      {{ isMonitoring ? 'Stop Monitoring' : 'Start Monitoring' }}
-    </ion-button>
+    <div class="button-container">
+      <ion-button (click)="toggleMonitoring()" [color]="isMonitoring ? 'danger' : 'success'">
+        {{ isMonitoring ? 'Stop Monitoring' : 'Start Monitoring' }}
+      </ion-button>
+    </div>
   </div>
 </ion-content>

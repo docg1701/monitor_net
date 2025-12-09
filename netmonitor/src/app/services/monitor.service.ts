@@ -1,82 +1,98 @@
-import { Injectable, inject } from '@angular/core';
-import { BehaviorSubject, Observable, Subscription, timer, from, of } from 'rxjs';
-import { catchError, map, switchMap } from 'rxjs/operators';
-import { PingResult } from '../models/ping-result.interface';
-import { environment } from '../../environments/environment';
+import { Injectable } from '@angular/core';
+import { Observable, from, interval, of, timer, BehaviorSubject, Subscription } from 'rxjs';
+import { switchMap, map, catchError, startWith, distinctUntilChanged } from 'rxjs/operators';
 import { TauriService } from './tauri.service';
-
-// Define the structure expected from Rust
-interface RustPingResult {
-  success: boolean;
-  latency: number;
-}
+import { environment } from '../../environments/environment';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { PingResult } from '../models/ping-result.interface';
 
 @Injectable({
   providedIn: 'root'
 })
 export class MonitorService {
-  private pingResults$ = new BehaviorSubject<PingResult[]>([]);
-  private timerSubscription: Subscription | null = null;
-  private tauriService = inject(TauriService);
+  private readonly pingUrl = environment.pingUrl || 'https://www.google.com';
+  private pollingSubscription: Subscription | null = null;
+  private _results$ = new BehaviorSubject<PingResult[]>([]);
+  
+  readonly results$ = this._results$.asObservable();
 
-  get results$(): Observable<PingResult[]> {
-    return this.pingResults$.asObservable();
-  }
+  constructor(private tauriService: TauriService) {}
 
-  measureLatency(url: string): Observable<PingResult> {
-    // Wrap the Promise returned by invoke in an Observable
-    return from(this.tauriService.invoke<RustPingResult>('ping', { url })).pipe(
-      map((res) => {
-        if (res.success) {
-          return {
-            timestamp: new Date(),
-            latencyMs: res.latency,
-            status: 'ok' as const
-          };
-        } else {
-           // Logic for explicit failure reported by backend (e.g. DNS error but handled)
-           return {
-            timestamp: new Date(),
-            latencyMs: null,
-            status: 'error' as const
-           };
-        }
-      }),
-      catchError((err) => {
-        console.error('Tauri ping error:', err);
-        return of({
-          timestamp: new Date(),
-          latencyMs: null,
-          status: 'error' as const
-        });
+  startMonitoring(intervalMs: number = 2000): void {
+    this.stopMonitoring(); // Ensure no duplicate subscriptions
+
+    this.pollingSubscription = timer(0, intervalMs).pipe(
+      switchMap(() => this.measureLatency()),
+      catchError(err => {
+        console.error('Monitoring error:', err);
+        return of({ latencyMs: null, timestamp: new Date(), status: 'error' } as PingResult);
       })
-    );
-  }
-
-  startMonitoring(intervalMs: number): void {
-    this.stopMonitoring();
-
-    this.timerSubscription = timer(0, intervalMs).pipe(
-      switchMap(() => this.measureLatency(environment.pingUrl))
     ).subscribe(result => {
-      this.addResult(result);
+        const current = this._results$.value;
+        // Keep last 50 points
+        const updated = [...current, result].slice(-50);
+        this._results$.next(updated);
     });
   }
 
   stopMonitoring(): void {
-    if (this.timerSubscription) {
-      this.timerSubscription.unsubscribe();
-      this.timerSubscription = null;
+    if (this.pollingSubscription) {
+      this.pollingSubscription.unsubscribe();
+      this.pollingSubscription = null;
     }
   }
 
-  private addResult(result: PingResult): void {
-    const currentResults = this.pingResults$.getValue();
-    const updatedResults = [...currentResults, result];
-    if (updatedResults.length > 50) {
-        updatedResults.shift();
+  private measureLatency(): Observable<PingResult> {
+    if (this.isTauri()) {
+      return from(this.tauriService.invoke<{ latency_ms: number }>('ping', { url: this.pingUrl })).pipe(
+        map(res => ({
+          latencyMs: res.latency_ms,
+          timestamp: new Date(),
+          status: 'ok'
+        } as PingResult)),
+        catchError(err => {
+            console.error('Tauri ping error:', err);
+            return of({ latencyMs: null, timestamp: new Date(), status: 'error' } as PingResult);
+        })
+      );
+    } else {
+      // Fallback for Web/Mobile (Capacitor)
+      return from(this.measureWebLatency()).pipe(
+          catchError(err => {
+              console.error('Web/Capacitor ping error:', err);
+              return of({ latencyMs: null, timestamp: new Date(), status: 'error' } as PingResult);
+          })
+      );
     }
-    this.pingResults$.next(updatedResults);
+  }
+
+  private async measureWebLatency(): Promise<PingResult> {
+    const start = Date.now();
+    try {
+        // Use CapacitorHttp for better CORS handling on devices
+        if (Capacitor.isNativePlatform()) {
+            await CapacitorHttp.request({
+                method: 'HEAD',
+                url: this.pingUrl
+            });
+        } else {
+            // Standard Fetch for Web (Development) - might hit CORS if not proxied
+            await fetch(this.pingUrl, { method: 'HEAD', mode: 'no-cors' }); 
+        }
+        const end = Date.now();
+        return {
+            latencyMs: end - start,
+            timestamp: new Date(),
+            status: 'ok'
+        };
+    } catch (error) {
+        console.error('Latency measurement failed', error);
+        throw error;
+    }
+  }
+
+  private isTauri(): boolean {
+    return !!(window as any).__TAURI__;
   }
 }
 
