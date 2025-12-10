@@ -63,15 +63,35 @@ npx cap sync
 
 ### Fase 2: Aba Configurações
 
+#### Configurações de Monitoramento
+
 | Configuração | Descrição | Padrão |
 |--------------|-----------|--------|
 | Ping Target | IP ou hostname para testes | `8.8.8.8` |
 | Intervalo | Segundos entre pings | `5` |
 
+#### Dados do Usuário (para relatório)
+
+| Campo | Descrição | Exemplo |
+|-------|-----------|---------|
+| Nome completo | Titular da conexão | João da Silva |
+| Documento | CPF ou CNPJ | 123.456.789-00 |
+| Endereço | Local da conexão | Rua X, 123 - Cidade/UF |
+
+#### Dados da Conexão (para relatório)
+
+| Campo | Descrição | Exemplo |
+|-------|-----------|---------|
+| Operadora | Nome do provedor | Vivo Fibra |
+| Plano | Nome do plano contratado | Fibra 300 Mbps |
+| Velocidade | Mbps contratados | 300 |
+| Tipo | Fibra, Cabo, DSL, etc. | Fibra Óptica |
+
 **Funcionalidades:**
-- Validação de IP/hostname
+- Validação de IP/hostname e CPF
 - Persistência no SQLite
 - Restaurar valores padrão
+- Campos opcionais não bloqueiam uso do app
 
 ---
 
@@ -102,10 +122,32 @@ Em vez de gerar relatórios PDF complexos no app, exportamos dados estruturados 
   "app": "NetMonitor",
   "version": "1.x.x",
   "export_date": "2025-12-10T10:00:00Z",
+
+  "user_info": {
+    "name": "João da Silva",
+    "document": "CPF: 123.456.789-00",
+    "address": "Rua Example, 123 - Bairro - Cidade/UF",
+    "coordinates": {
+      "latitude": -23.5505,
+      "longitude": -46.6333,
+      "accuracy_meters": 10
+    }
+  },
+
+  "connection_info": {
+    "provider": "Operadora XYZ",
+    "plan": "Fibra 300 Mbps",
+    "contract_speed_mbps": 300,
+    "public_ip": "189.45.123.67",
+    "ip_collected_at": "2025-12-10T10:00:00Z",
+    "connection_type": "Fibra Óptica"
+  },
+
   "period": {
     "start": "2025-12-01T00:00:00Z",
     "end": "2025-12-10T10:00:00Z"
   },
+
   "summary": {
     "total_pings": 15234,
     "successful": 14987,
@@ -116,13 +158,17 @@ Em vez de gerar relatórios PDF complexos no app, exportamos dados estruturados 
     "max_latency_ms": 890,
     "total_downtime_minutes": 23.5
   },
+
   "outages": [
     {
       "start": "2025-12-05T14:23:00Z",
       "end": "2025-12-05T14:28:12Z",
-      "duration_minutes": 5.2
+      "duration_minutes": 5.2,
+      "public_ip_before": "189.45.123.67",
+      "public_ip_after": "189.45.124.12"
     }
   ],
+
   "hourly_summary": [
     {"hour": "2025-12-10T00:00:00Z", "avg_latency": 42.1, "success_rate": 100},
     {"hour": "2025-12-10T01:00:00Z", "avg_latency": 38.5, "success_rate": 98.3}
@@ -130,14 +176,94 @@ Em vez de gerar relatórios PDF complexos no app, exportamos dados estruturados 
 }
 ```
 
-### Prompt Incluído
+### Dados do Usuário e Conexão
 
-O app gera automaticamente este prompt junto com os dados:
+#### Informações Coletadas
+
+| Dado | Origem | Obrigatório |
+|------|--------|-------------|
+| Nome completo | Input do usuário | Sim |
+| CPF/Documento | Input do usuário | Sim |
+| Endereço | Input do usuário | Sim |
+| Coordenadas GPS | Geolocation API (mobile) | Não |
+| Nome da operadora | Input do usuário | Sim |
+| Plano contratado | Input do usuário | Sim |
+| Velocidade contratada | Input do usuário | Sim |
+| IP público | API externa (ipify.org) | Automático |
+
+#### Coleta de IP Público
+
+O app consulta periodicamente o IP público para:
+- Registrar mudanças de IP (útil para identificar reconexões)
+- Documentar o IP no momento de cada queda
+- Provar que a conexão é do endereço declarado
+
+**API sugerida:**
+```typescript
+// Gratuita, sem limite, HTTPS
+const response = await fetch('https://api.ipify.org?format=json');
+const { ip } = await response.json();
+```
+
+#### Geolocalização (Mobile)
+
+No Android, solicitar permissão de localização para:
+- Confirmar que o monitoramento é do endereço declarado
+- Adicionar coordenadas GPS ao relatório (prova técnica)
+
+```typescript
+// Capacitor Geolocation
+import { Geolocation } from '@capacitor/geolocation';
+const position = await Geolocation.getCurrentPosition();
+```
+
+### Fluxo do Usuário
+
+1. Abre aba Relatórios
+2. Clica em "Exportar para IA"
+3. App gera 2 arquivos para download:
+   - `netmonitor_dados.json` (dados de monitoramento)
+   - `netmonitor_prompt.txt` (prompt + instruções)
+4. Usuário acessa ChatGPT/Claude/Gemini
+5. Anexa o arquivo JSON
+6. Cola o prompt
+7. IA gera relatório completo com gráficos e documentos
+
+### Arquivos Exportados
+
+#### 1. `netmonitor_dados.json`
+Contém todos os dados de monitoramento em formato JSON (estrutura mostrada acima).
+
+#### 2. `netmonitor_prompt.txt`
+Contém as instruções e o prompt para a IA:
 
 ```
-Você é um especialista em telecomunicações e direito do consumidor brasileiro.
+═══════════════════════════════════════════════════════════════
+              NETMONITOR - EXPORTAÇÃO PARA IA
+═══════════════════════════════════════════════════════════════
 
-Analise os dados de monitoramento de conexão de internet anexados e gere:
+COMO USAR:
+
+1. Acesse um chatbot de IA:
+   • ChatGPT Plus: https://chat.openai.com (GPT-4 recomendado)
+   • Claude Pro: https://claude.ai
+   • Gemini Advanced: https://gemini.google.com
+
+2. Inicie uma nova conversa
+
+3. ANEXE o arquivo "netmonitor_dados.json"
+
+4. COLE o prompt abaixo e envie:
+
+═══════════════════════════════════════════════════════════════
+                         PROMPT
+═══════════════════════════════════════════════════════════════
+
+Você é um especialista em telecomunicações e direito do
+consumidor brasileiro.
+
+Analise os dados de monitoramento de conexão de internet
+no arquivo JSON anexado e gere:
 
 1. **Relatório Técnico** com gráficos:
    - Gráfico de linha: latência ao longo do tempo
@@ -145,54 +271,17 @@ Analise os dados de monitoramento de conexão de internet anexados e gere:
    - Resumo estatístico formatado
 
 2. **Análise de SLA**:
-   - Compare com padrões aceitáveis (99.5% uptime, <100ms latência)
+   - Compare com padrões aceitáveis (99.5% uptime, <100ms)
    - Identifique violações de qualidade
+   - Calcule tempo total de indisponibilidade
 
-3. **Documentos para Reclamação** (se houver problemas significativos):
+3. **Documentos para Reclamação** (se aplicável):
    - Texto para reclamação no PROCON
    - Texto para reclamação na ANATEL
-   - Modelo de notificação extrajudicial ao provedor
+   - Modelo de notificação extrajudicial
 
-Dados do monitoramento:
-[COLE OS DADOS JSON AQUI]
-```
-
-### Fluxo do Usuário
-
-1. Abre aba Relatórios
-2. Clica em "Exportar para IA"
-3. App gera JSON + prompt + instruções
-4. Usuário copia para área de transferência
-5. Cola no ChatGPT/Claude/Gemini
-6. IA gera relatório completo com gráficos e documentos
-
-### Instruções Incluídas na Exportação
-
-O app também exporta estas instruções para o usuário:
-
-```
-═══════════════════════════════════════════════════════════════
-                    COMO USAR ESTA EXPORTAÇÃO
-═══════════════════════════════════════════════════════════════
-
-1. ACESSE UM CHATBOT DE IA:
-   • ChatGPT: https://chat.openai.com (recomendado: GPT-4)
-   • Claude: https://claude.ai
-   • Gemini: https://gemini.google.com
-
-2. INICIE UMA NOVA CONVERSA
-
-3. COLE TODO O CONTEÚDO ABAIXO (prompt + dados)
-
-4. ENVIE E AGUARDE A ANÁLISE
-
-5. A IA IRÁ GERAR:
-   ✓ Gráficos de latência e quedas
-   ✓ Análise de qualidade da conexão
-   ✓ Documentos para reclamação (se necessário)
-
-DICA: Se os dados forem muito grandes, a IA pode pedir para
-      anexar como arquivo. Salve como "netmonitor_dados.json".
+Use os dados do usuário e da conexão presentes no arquivo
+para personalizar os documentos gerados.
 
 ═══════════════════════════════════════════════════════════════
 ```
