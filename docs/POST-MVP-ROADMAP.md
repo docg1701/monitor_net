@@ -161,10 +161,41 @@ Dados do monitoramento:
 
 1. Abre aba Relatórios
 2. Clica em "Exportar para IA"
-3. App gera JSON + prompt
+3. App gera JSON + prompt + instruções
 4. Usuário copia para área de transferência
 5. Cola no ChatGPT/Claude/Gemini
 6. IA gera relatório completo com gráficos e documentos
+
+### Instruções Incluídas na Exportação
+
+O app também exporta estas instruções para o usuário:
+
+```
+═══════════════════════════════════════════════════════════════
+                    COMO USAR ESTA EXPORTAÇÃO
+═══════════════════════════════════════════════════════════════
+
+1. ACESSE UM CHATBOT DE IA:
+   • ChatGPT: https://chat.openai.com (recomendado: GPT-4)
+   • Claude: https://claude.ai
+   • Gemini: https://gemini.google.com
+
+2. INICIE UMA NOVA CONVERSA
+
+3. COLE TODO O CONTEÚDO ABAIXO (prompt + dados)
+
+4. ENVIE E AGUARDE A ANÁLISE
+
+5. A IA IRÁ GERAR:
+   ✓ Gráficos de latência e quedas
+   ✓ Análise de qualidade da conexão
+   ✓ Documentos para reclamação (se necessário)
+
+DICA: Se os dados forem muito grandes, a IA pode pedir para
+      anexar como arquivo. Salve como "netmonitor_dados.json".
+
+═══════════════════════════════════════════════════════════════
+```
 
 ---
 
