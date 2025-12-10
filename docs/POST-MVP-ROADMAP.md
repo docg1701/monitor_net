@@ -70,25 +70,37 @@ npx cap sync
 | Ping Target | IP ou hostname para testes | `8.8.8.8` |
 | Intervalo | Segundos entre pings | `5` |
 
+#### País/Região
+
+| Opção | Órgão de Reclamação | Legislação |
+|-------|---------------------|------------|
+| 🇧🇷 Brasil | ANATEL, PROCON | CDC, Marco Civil |
+| 🇺🇸 Estados Unidos | FCC, State Attorney General | FCC Rules, State Consumer Laws |
+| 🇪🇺 União Europeia | National Telecom Authority | EECC, GDPR |
+| 🇬🇧 Reino Unido | Ofcom, Ombudsman Services | Communications Act 2003 |
+
 #### Dados do Usuário (para relatório)
 
-| Campo | Descrição | Exemplo |
-|-------|-----------|---------|
-| Nome completo | Titular da conexão | João da Silva |
-| Documento | CPF ou CNPJ | 123.456.789-00 |
-| Endereço | Local da conexão | Rua X, 123 - Cidade/UF |
+| Campo | Brasil | EUA | UE | UK |
+|-------|--------|-----|----|----|
+| Nome completo | ✓ | ✓ | ✓ | ✓ |
+| Documento | CPF/CNPJ | SSN (opcional) | National ID | NIN (opcional) |
+| Endereço | Rua, Cidade/UF | Street, City, State, ZIP | Street, City, Postal Code | Street, City, Postcode |
+| Telefone | +55 | +1 | +XX | +44 |
 
 #### Dados da Conexão (para relatório)
 
 | Campo | Descrição | Exemplo |
 |-------|-----------|---------|
-| Operadora | Nome do provedor | Vivo Fibra |
+| Operadora | Nome do provedor | Vivo / Comcast / BT / Orange |
 | Plano | Nome do plano contratado | Fibra 300 Mbps |
 | Velocidade | Mbps contratados | 300 |
 | Tipo | Fibra, Cabo, DSL, etc. | Fibra Óptica |
+| Número do contrato | Identificador do serviço | Opcional |
 
 **Funcionalidades:**
-- Validação de IP/hostname e CPF
+- Seleção de país altera campos e validações
+- Validação de documentos por país (CPF, etc.)
 - Persistência no SQLite
 - Restaurar valores padrão
 - Campos opcionais não bloqueiam uso do app
@@ -123,10 +135,27 @@ Em vez de gerar relatórios PDF complexos no app, exportamos dados estruturados 
   "version": "1.x.x",
   "export_date": "2025-12-10T10:00:00Z",
 
+  "region": {
+    "country_code": "BR",
+    "country_name": "Brasil",
+    "regulatory_body": "ANATEL",
+    "consumer_protection": "PROCON",
+    "applicable_law": "Código de Defesa do Consumidor, Marco Civil da Internet"
+  },
+
   "user_info": {
     "name": "João da Silva",
-    "document": "CPF: 123.456.789-00",
-    "address": "Rua Example, 123 - Bairro - Cidade/UF",
+    "document_type": "CPF",
+    "document_number": "123.456.789-00",
+    "phone": "+55 11 99999-9999",
+    "address": {
+      "street": "Rua Example, 123",
+      "neighborhood": "Bairro",
+      "city": "São Paulo",
+      "state": "SP",
+      "postal_code": "01234-567",
+      "country": "Brasil"
+    },
     "coordinates": {
       "latitude": -23.5505,
       "longitude": -46.6333,
@@ -138,9 +167,10 @@ Em vez de gerar relatórios PDF complexos no app, exportamos dados estruturados 
     "provider": "Operadora XYZ",
     "plan": "Fibra 300 Mbps",
     "contract_speed_mbps": 300,
+    "contract_number": "123456789",
     "public_ip": "189.45.123.67",
     "ip_collected_at": "2025-12-10T10:00:00Z",
-    "connection_type": "Fibra Óptica"
+    "connection_type": "Fiber"
   },
 
   "period": {
@@ -259,29 +289,49 @@ COMO USAR:
                          PROMPT
 ═══════════════════════════════════════════════════════════════
 
-Você é um especialista em telecomunicações e direito do
-consumidor brasileiro.
+You are an expert in telecommunications and consumer rights.
 
-Analise os dados de monitoramento de conexão de internet
-no arquivo JSON anexado e gere:
+Analyze the internet connection monitoring data in the attached
+JSON file. Note the "region" field to determine applicable laws
+and regulatory bodies.
 
-1. **Relatório Técnico** com gráficos:
-   - Gráfico de linha: latência ao longo do tempo
-   - Gráfico de barras: quedas por dia
-   - Resumo estatístico formatado
+Generate:
 
-2. **Análise de SLA**:
-   - Compare com padrões aceitáveis (99.5% uptime, <100ms)
-   - Identifique violações de qualidade
-   - Calcule tempo total de indisponibilidade
+1. **Technical Report** with charts:
+   - Line chart: latency over time
+   - Bar chart: outages per day
+   - Statistical summary
 
-3. **Documentos para Reclamação** (se aplicável):
+2. **SLA Analysis**:
+   - Compare against acceptable standards (99.5% uptime, <100ms)
+   - Identify quality violations
+   - Calculate total downtime
+
+3. **Complaint Documents** (if issues found):
+
+   FOR BRAZIL (BR):
    - Texto para reclamação no PROCON
    - Texto para reclamação na ANATEL
-   - Modelo de notificação extrajudicial
+   - Notificação extrajudicial
 
-Use os dados do usuário e da conexão presentes no arquivo
-para personalizar os documentos gerados.
+   FOR USA (US):
+   - FCC complaint text
+   - State Attorney General complaint
+   - Demand letter to provider
+
+   FOR EU:
+   - National Telecom Authority complaint
+   - Consumer protection complaint (per country)
+   - GDPR data request (if applicable)
+
+   FOR UK (GB):
+   - Ofcom complaint text
+   - Ombudsman Services complaint
+   - Letter before action
+
+Use the user and connection data in the file to personalize
+all generated documents. Write documents in the user's language
+based on their country.
 
 ═══════════════════════════════════════════════════════════════
 ```
@@ -309,9 +359,38 @@ Monitorando há: 2h 34m 12s
 
 ---
 
+---
+
+## Documentação Pública
+
+O tutorial de uso com IA e o prompt serão publicados em:
+- `docs/AI-EXPORT-GUIDE.md` - Guia completo de como usar os dados exportados
+- README do repositório - Link para o guia
+
+Isso permite que usuários consultem as instruções sem precisar exportar dados primeiro.
+
+---
+
 ## Referências
 
+### Técnicas
 - [Tauri SQL Plugin](https://v2.tauri.app/plugin/sql/)
 - [Capacitor SQLite](https://github.com/capacitor-community/sqlite)
-- [Regulamento ANATEL](https://www.anatel.gov.br)
+
+### Legislação por Região
+
+**Brasil:**
+- [ANATEL - Regulamentos](https://www.anatel.gov.br)
 - [Código de Defesa do Consumidor](http://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm)
+
+**Estados Unidos:**
+- [FCC Consumer Complaints](https://consumercomplaints.fcc.gov)
+- [FCC Rules on Internet Service](https://www.fcc.gov/consumers/guides)
+
+**União Europeia:**
+- [EECC - European Electronic Communications Code](https://digital-strategy.ec.europa.eu/en/policies/connectivity)
+- [BEREC - Consumer Rights](https://www.berec.europa.eu)
+
+**Reino Unido:**
+- [Ofcom - Complaints](https://www.ofcom.org.uk/complaints)
+- [Communications Act 2003](https://www.legislation.gov.uk/ukpga/2003/21)
