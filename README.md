@@ -1,6 +1,6 @@
-# NetMonitor Enterprise
+# NetMonitor
 
-![Latest Release](https://img.shields.io/github/v/release/docg1701/NetMonitor)
+![Latest Release](https://img.shields.io/github/v/release/docg1701/NetMonitor?label=latest%20release)
 
 NetMonitor is a modern, cross-platform network latency monitoring tool designed to be stable, permission-friendly, and easy to use. It provides real-time visualization and statistics for network performance monitoring.
 
