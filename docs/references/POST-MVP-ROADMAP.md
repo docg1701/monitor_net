@@ -67,8 +67,21 @@ npx cap sync
 
 | Configuração | Descrição | Padrão |
 |--------------|-----------|--------|
-| Ping Target | IP ou hostname para testes | `8.8.8.8` |
+| Ping Target | Seleção via dropdown (ver opções abaixo) | `Google DNS (8.8.8.8)` |
 | Intervalo | Segundos entre pings | `5` |
+
+**Opções de Ping Target (Dropdown):**
+
+| Label | Endereço | Protocolo | Notas |
+|-------|----------|-----------|-------|
+| Google DNS | 8.8.8.8 | ICMP/HTTP | Mais confiável, presença global |
+| Cloudflare DNS | 1.1.1.1 | ICMP/HTTP | Conhecido por baixa latência |
+| Quad9 DNS | 9.9.9.9 | ICMP/HTTP | Alternativa focada em segurança |
+| OpenDNS | 208.67.222.222 | ICMP/HTTP | Popular em empresas |
+| Google Web | www.google.com | HTTP HEAD | Medição via web |
+| Cloudflare Web | www.cloudflare.com | HTTP HEAD | Alternativa via web |
+
+> **Nota de Segurança:** Usar dropdown com alvos pré-definidos em vez de campo de texto livre mantém a segurança do backend Rust (whitelist de domínios permitidos) enquanto oferece opções úteis ao usuário.
 
 #### País/Região
 
