@@ -32,18 +32,26 @@ This application is rewritten using Angular, Ionic, Capacitor, and Tauri to ensu
 2.  Install/Run according to your OS (AppImage, .exe/msi, .dmg).
 
 **Linux Helper Script:**
-If you have built the project locally or downloaded the AppImage, you can use the included script to install it to your system menu:
+After building the AppImage or downloading it from Releases, use `install_linux.sh` to add NetMonitor to your system menu.
 
+**What the script does:**
+*   Copies the AppImage to `~/.local/bin/`
+*   Extracts the application icon from the AppImage
+*   Creates a `.desktop` file in `~/.local/share/applications/`
+*   The app will appear in your menu under the "Internet" category
+
+**Installation:**
 ```bash
-# Make script executable
 chmod +x install_linux.sh
-
-# Install (using local build path)
 ./install_linux.sh netmonitor/src-tauri/target/release/bundle/appimage/NetMonitor_1.0.0_amd64.AppImage
+```
 
-# Uninstall
+**Uninstallation:**
+```bash
 ./install_linux.sh --uninstall
 ```
+
+This works on Linux Mint, Ubuntu, and other distributions using XDG desktop standards.
 
 ### Android
 1.  Download the latest `.apk` from the Releases page.
@@ -56,6 +64,37 @@ chmod +x install_linux.sh
 *   Rust (latest stable)
 *   Ionic CLI (`npm install -g @ionic/cli`)
 *   Tauri CLI (`npm install -g @tauri-apps/cli`)
+
+### System Dependencies
+
+#### Linux (Ubuntu/Debian/Mint)
+```bash
+sudo apt update
+sudo apt install -y \
+  build-essential \
+  libgtk-3-dev \
+  libwebkit2gtk-4.1-dev \
+  libappindicator3-dev \
+  librsvg2-dev \
+  patchelf
+```
+
+#### Installing Rust
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+rustc --version  # Verify installation
+```
+
+#### Android Build Requirements
+*   JDK 17 (required by Gradle)
+*   Android SDK with API level 35
+*   Set environment variables:
+```bash
+export ANDROID_HOME=$HOME/Android/Sdk
+export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
+export PATH=$PATH:$ANDROID_HOME/platform-tools
+```
 
 ### Setup
 ```bash
@@ -73,17 +112,57 @@ To run the Desktop app in development mode:
 npm run tauri:dev
 ```
 
-### Building for Desktop (Tauri)
-```bash
-npm run tauri build
-```
+### Building for Desktop (Linux AppImage)
 
-### Building for Android
-```bash
-npm run build
-npx cap sync
-npx cap open android
-```
+**Complete step-by-step:**
+
+1.  Install system dependencies (see above)
+2.  Install Rust (see above)
+3.  Install Node.js v20+ (via nvm or package manager)
+4.  Install global CLI tools:
+    ```bash
+    npm install -g @ionic/cli @tauri-apps/cli
+    ```
+5.  Install project dependencies:
+    ```bash
+    cd netmonitor
+    npm install
+    ```
+6.  Build the application:
+    ```bash
+    npm run tauri build
+    ```
+7.  The AppImage will be generated at:
+    ```
+    src-tauri/target/release/bundle/appimage/NetMonitor_X.X.X_amd64.AppImage
+    ```
+
+### Building for Android (via Command Line)
+
+1.  Install project dependencies:
+    ```bash
+    cd netmonitor
+    npm install
+    ```
+2.  Build the Angular frontend:
+    ```bash
+    npm run build
+    ```
+3.  Sync with Capacitor:
+    ```bash
+    npx cap sync android
+    ```
+4.  Build the APK (debug):
+    ```bash
+    cd android
+    ./gradlew assembleDebug
+    ```
+    The APK will be at: `android/app/build/outputs/apk/debug/app-debug.apk`
+
+5.  Build the APK (release - requires signing):
+    ```bash
+    ./gradlew assembleRelease
+    ```
 
 ### Release Process
 See [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md) for instructions on creating and publishing new releases.
