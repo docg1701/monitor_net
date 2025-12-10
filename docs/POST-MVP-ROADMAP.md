@@ -354,7 +354,160 @@ based on their country.
 
 ---
 
-### Fase 4: Melhorias de UX
+### Fase 4: Monetização com AdMob
+
+**Objetivo:** Gerar receita com anúncios não-intrusivos, apenas no mobile (Android/iOS).
+
+#### Tecnologia
+
+| Plataforma | Plugin | Versão |
+|------------|--------|--------|
+| Capacitor | `@capacitor-community/admob` | 6.x |
+
+#### Instalação
+
+```bash
+npm install @capacitor-community/admob
+npx cap sync
+```
+
+#### Tipos de Anúncio
+
+| Tipo | Localização | Comportamento | Gatilho |
+|------|-------------|---------------|---------|
+| **Banner** | Camada superior à barra inferior | Aparece/some em ciclos | Automático durante uso |
+| **Rewarded Video** | Tela cheia | Usuário assiste até o fim | Ao exportar relatório |
+
+#### Banner Rotativo
+
+O banner aparece numa camada flutuante acima da tab bar, com animação de fade in/out:
+
+```typescript
+import { AdMob, BannerAdSize, BannerAdPosition } from '@capacitor-community/admob';
+
+// Configuração
+const BANNER_INTERVAL = 60000;  // 60s visível
+const BANNER_PAUSE = 120000;    // 120s oculto
+
+async function initBannerRotation() {
+  await AdMob.initialize();
+
+  const options = {
+    adId: 'ca-app-pub-XXXXXX/YYYYYY', // Seu Ad Unit ID
+    adSize: BannerAdSize.ADAPTIVE_BANNER,
+    position: BannerAdPosition.BOTTOM_CENTER,
+    margin: 56, // Altura da tab bar em dp
+  };
+
+  // Ciclo: mostrar → esconder → mostrar...
+  setInterval(async () => {
+    await AdMob.showBanner(options);
+
+    setTimeout(async () => {
+      await AdMob.hideBanner();
+    }, BANNER_INTERVAL);
+
+  }, BANNER_INTERVAL + BANNER_PAUSE);
+}
+```
+
+**Comportamento:**
+- Banner fica visível por 60 segundos
+- Desaparece por 120 segundos
+- Ciclo se repete enquanto app está em primeiro plano
+- Animação suave de fade para não irritar o usuário
+
+#### Vídeo Recompensado (Rewarded Ad)
+
+O usuário deve assistir um vídeo completo para desbloquear a exportação do relatório:
+
+```typescript
+import { AdMob, RewardAdPluginEvents } from '@capacitor-community/admob';
+
+async function showRewardedAdForExport(): Promise<boolean> {
+  return new Promise(async (resolve) => {
+    // Listener para recompensa
+    AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
+      resolve(true); // Usuário completou o vídeo
+    });
+
+    // Listener para fechamento sem completar
+    AdMob.addListener(RewardAdPluginEvents.Dismissed, () => {
+      resolve(false); // Usuário pulou/fechou
+    });
+
+    // Carregar e mostrar
+    await AdMob.prepareRewardVideoAd({
+      adId: 'ca-app-pub-XXXXXX/ZZZZZZ', // Rewarded Ad Unit ID
+    });
+
+    await AdMob.showRewardVideoAd();
+  });
+}
+
+// Uso no fluxo de exportação
+async function exportReport() {
+  const adWatched = await showRewardedAdForExport();
+
+  if (adWatched) {
+    // Gerar e baixar os arquivos JSON + TXT
+    generateExportFiles();
+  } else {
+    // Mostrar mensagem explicando que precisa assistir o vídeo
+    showToast('Assista o vídeo completo para exportar o relatório');
+  }
+}
+```
+
+#### Fluxo de Exportação com Ad
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Aba Relatórios                       │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│   📊 Estatísticas do Período                           │
+│   ─────────────────────────                            │
+│   Total de pings: 15.234                               │
+│   Uptime: 98.38%                                       │
+│   Latência média: 45ms                                 │
+│                                                         │
+│   ┌─────────────────────────────────────────────────┐  │
+│   │         🎬 Exportar para IA                     │  │
+│   │                                                 │  │
+│   │   Assista um breve vídeo para desbloquear      │  │
+│   │   a exportação dos dados de monitoramento.     │  │
+│   │                                                 │  │
+│   │            [ Assistir e Exportar ]              │  │
+│   └─────────────────────────────────────────────────┘  │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Considerações
+
+| Aspecto | Decisão |
+|---------|---------|
+| Desktop (Tauri) | Sem ads - AdMob não suporta desktop |
+| Frequência do banner | Balanceada para não irritar (1min on / 2min off) |
+| Fallback offline | Se sem internet, permitir exportação sem ad |
+| Teste | Usar IDs de teste do AdMob durante desenvolvimento |
+
+#### IDs de Teste (Desenvolvimento)
+
+```typescript
+// Android
+const TEST_BANNER_ID = 'ca-app-pub-3940256099942544/6300978111';
+const TEST_REWARDED_ID = 'ca-app-pub-3940256099942544/5224354917';
+
+// iOS
+const TEST_BANNER_ID_IOS = 'ca-app-pub-3940256099942544/2934735716';
+const TEST_REWARDED_ID_IOS = 'ca-app-pub-3940256099942544/1712485313';
+```
+
+---
+
+### Fase 5: Melhorias de UX
 
 #### Cartão de Uptime
 Na tela principal, exibir há quanto tempo o app está monitorando:
@@ -367,7 +520,7 @@ Monitorando há: 2h 34m 12s
 
 ---
 
-### Fase 5: Futuro (Opcional)
+### Fase 6: Futuro (Opcional)
 
 - Widget de status para home screen
 - Histórico visual simples de quedas
@@ -384,12 +537,20 @@ Monitorando há: 2h 34m 12s
 |---------|----------|
 | Armazenamento | 100% local no dispositivo do usuário |
 | Transmissão | Nenhum dado é enviado para servidores externos |
-| Telemetria | Zero. Não há analytics ou rastreamento |
+| Telemetria | Zero. Não há analytics ou rastreamento próprio |
 | Uso pelo App | Os dados existem apenas para consulta e exportação pelo usuário |
 
 Os dados pessoais (nome, CPF, endereço) e de monitoramento ficam **exclusivamente** no SQLite local do dispositivo. O único momento em que saem do dispositivo é quando o **próprio usuário** escolhe exportar os arquivos para usar em um chatbot de IA.
 
 > **Nota:** A consulta ao IP público (ipify.org) é a única requisição externa feita pelo app, e serve apenas para registrar o IP no relatório. Nenhum dado pessoal é enviado nessa consulta.
+
+#### Sobre os Anúncios (Mobile)
+
+O app mobile utiliza Google AdMob para exibição de anúncios. O AdMob pode coletar dados de acordo com sua própria política de privacidade do Google. **Importante:**
+
+- O NetMonitor **não compartilha** dados pessoais do usuário com o AdMob
+- O AdMob coleta apenas dados padrão de dispositivo/uso para personalização de anúncios
+- A versão desktop (Tauri) **não contém anúncios**
 
 ---
 
@@ -415,6 +576,7 @@ Isso permite que usuários consultem as instruções sem precisar exportar dados
 ### Técnicas
 - [Tauri SQL Plugin](https://v2.tauri.app/plugin/sql/)
 - [Capacitor SQLite](https://github.com/capacitor-community/sqlite)
+- [Capacitor AdMob](https://github.com/capacitor-community/admob)
 
 ### Legislação por Região
 
