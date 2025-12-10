@@ -20,3 +20,4 @@ latency_log.csv
 # Temporary
 tmp/
 temp/
+release-keystore.jks
