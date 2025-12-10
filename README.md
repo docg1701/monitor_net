@@ -74,9 +74,17 @@ sudo apt install -y \
   build-essential \
   libgtk-3-dev \
   libwebkit2gtk-4.1-dev \
-  libappindicator3-dev \
+  libjavascriptcoregtk-4.1-dev \
+  libsoup-3.0-dev \
   librsvg2-dev \
-  patchelf
+  patchelf \
+  pkg-config
+
+# For Ubuntu:
+sudo apt install -y libappindicator3-dev
+
+# For Linux Mint (uses Ayatana fork):
+sudo apt install -y libayatana-appindicator3-dev
 ```
 
 #### Installing Rust
