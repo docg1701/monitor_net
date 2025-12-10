@@ -27,4 +27,13 @@ tauri-plugin-shell = "2"
 tauri-plugin-store = "2"
 reqwest = { version = "0.12", features = ["json"] }
 
+[profile.dev]
+opt-level = 0
+codegen-units = 256
+incremental = true
 
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+strip = "debuginfo"
