@@ -15,8 +15,8 @@ architecture:
 customTechnicalDocuments: null
 devLoadAlwaysFiles:
   - docs/architecture/coding-standards.md
-  - docs/architecture/tech-stack.md
-  - docs/architecture/source-tree.md
+  - docs/architecture/high-level-architecture.md
+  - docs/architecture/source-tree-and-module-organization.md
 devDebugLog: .ai/debug-log.md
 devStoryLocation: docs/stories
 slashPrefix: BMad
