@@ -4,7 +4,7 @@
   "version": "1.0.4",
   "identifier": "com.galvani.netmonitor",
   "build": {
-    "frontendDist": "../www",
+    "frontendDist": "../www/browser",
     "devUrl": "http://localhost:4200",
     "beforeDevCommand": "npm start",
     "beforeBuildCommand": "npm run build"
@@ -16,7 +16,8 @@
         "width": 1004,
         "height": 627,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "devtools": true
       }
     ],
     "security": {

@@ -9,16 +9,21 @@ export class TauriDatabaseService extends DatabaseService {
   private db: Database | null = null;
 
   async init(): Promise<void> {
+    console.log('TauriDB: init() called, isInitialized:', this.isInitialized);
     if (this.isInitialized) {
       return;
     }
 
     try {
+      console.log('TauriDB: Calling Database.load()...');
       this.db = await Database.load(`sqlite:${this.DB_NAME}`);
+      console.log('TauriDB: Database.load() success');
       this.setInitialized(true);
     } catch (error) {
       console.error('TauriDatabaseService: Failed to initialize database', error);
-      // Don't crash the app - graceful degradation
+      // Still mark as initialized to allow app to proceed (graceful degradation)
+      // DB operations will be no-ops since this.db is null
+      this.setInitialized(true);
     }
   }
 

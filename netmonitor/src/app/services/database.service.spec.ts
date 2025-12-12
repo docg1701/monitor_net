@@ -15,6 +15,7 @@ vi.mock('@tauri-apps/plugin-sql', () => ({
   }
 }));
 
+
 vi.mock('@capacitor-community/sqlite', () => ({
   CapacitorSQLite: {},
   SQLiteConnection: class {
@@ -32,14 +33,22 @@ vi.mock('@capacitor-community/sqlite', () => ({
   }
 }));
 
+// Mock isTauri at module level
+vi.mock('@tauri-apps/api/core', () => ({
+  isTauri: vi.fn(() => false),
+  invoke: vi.fn()
+}));
+
+// Import after mock
+import * as tauriCore from '@tauri-apps/api/core';
+
 describe('DatabaseService', () => {
   beforeEach(() => {
-    delete (window as unknown as { __TAURI__?: unknown }).__TAURI__;
     vi.clearAllMocks();
+    vi.mocked(tauriCore.isTauri).mockReturnValue(false);
   });
 
   afterEach(() => {
-    delete (window as unknown as { __TAURI__?: unknown }).__TAURI__;
     vi.restoreAllMocks();
   });
 
@@ -62,26 +71,28 @@ describe('DatabaseService', () => {
 
   // 7.3: Platform detection returns correct service type
   describe('Platform detection (databaseServiceFactory)', () => {
-    it('should return TauriDatabaseService when __TAURI__ is defined', () => {
-      (window as unknown as { __TAURI__?: unknown }).__TAURI__ = {};
+    it('should return TauriDatabaseService when isTauri() returns true', () => {
+      vi.mocked(tauriCore.isTauri).mockReturnValue(true);
       const service = databaseServiceFactory();
       expect(service).toBeInstanceOf(TauriDatabaseService);
     });
 
     it('should return CapacitorDatabaseService when Capacitor.isNativePlatform() is true', () => {
+      vi.mocked(tauriCore.isTauri).mockReturnValue(false);
       vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true);
       const service = databaseServiceFactory();
       expect(service).toBeInstanceOf(CapacitorDatabaseService);
     });
 
     it('should return WebDatabaseService in browser environment', () => {
+      vi.mocked(tauriCore.isTauri).mockReturnValue(false);
       vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(false);
       const service = databaseServiceFactory();
       expect(service).toBeInstanceOf(WebDatabaseService);
     });
 
     it('should prioritize Tauri over Capacitor', () => {
-      (window as unknown as { __TAURI__?: unknown }).__TAURI__ = {};
+      vi.mocked(tauriCore.isTauri).mockReturnValue(true);
       vi.spyOn(Capacitor, 'isNativePlatform').mockReturnValue(true);
       const service = databaseServiceFactory();
       expect(service).toBeInstanceOf(TauriDatabaseService);
@@ -172,7 +183,7 @@ describe('DatabaseService', () => {
       consoleWarnSpy.mockRestore();
     });
 
-    it('should handle init() error gracefully without crashing', async () => {
+    it('should handle init() error gracefully and still mark as initialized', async () => {
       const Database = await import('@tauri-apps/plugin-sql');
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       (Database.default.load as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('DB error'));
@@ -181,7 +192,8 @@ describe('DatabaseService', () => {
       await failService.init();
 
       expect(consoleErrorSpy).toHaveBeenCalled();
-      expect(failService.isInitialized).toBe(false);
+      // isInitialized should be true even on error to allow app to proceed (graceful degradation)
+      expect(failService.isInitialized).toBe(true);
       consoleErrorSpy.mockRestore();
     });
   });
