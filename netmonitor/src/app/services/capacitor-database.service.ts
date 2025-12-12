@@ -42,7 +42,9 @@ export class CapacitorDatabaseService extends DatabaseService {
       this.setInitialized(true);
     } catch (error) {
       console.error('CapacitorDatabaseService: Failed to initialize database', error);
-      // Don't crash the app - graceful degradation
+      // Still mark as initialized to allow app to proceed (graceful degradation)
+      // DB operations will be no-ops since this.db is null
+      this.setInitialized(true);
     }
   }
 

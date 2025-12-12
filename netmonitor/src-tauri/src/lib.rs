@@ -51,6 +51,9 @@ async fn ping(url: String, state: State<'_, AppState>) -> Result<PingResult, Str
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  // Disable DMA-BUF renderer to fix blank screen on Linux with NVIDIA GPUs
+  std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+
   tauri::Builder::default()
     .plugin(tauri_plugin_shell::init())
     .plugin(tauri_plugin_store::Builder::default().build())
@@ -64,6 +67,11 @@ pub fn run() {
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
 
       app.manage(AppState { client });
+
+      // Open DevTools for debugging
+      if let Some(window) = app.get_webview_window("main") {
+        window.open_devtools();
+      }
 
       if cfg!(debug_assertions) {
         app.handle().plugin(
